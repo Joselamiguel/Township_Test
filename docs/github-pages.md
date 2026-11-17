@@ -38,8 +38,8 @@ Next.js prefixes links and assets, and the snapshot provider prefixes JSON reque
 
 ## Automatic deployment
 
-`.github/workflows/pages.yml` builds and checks the static app on pull requests and uploads the compiled `out/` artifact. Pushes to `master` and manual runs also deploy the artifact using GitHub's official Pages actions. The deployment job requests `pages: write` and `id-token: write`; it selects the Actions build source so Pages serves the compiled site rather than repository Markdown.
+`.github/workflows/pages.yml` builds and checks the static app on pull requests and uploads the compiled `out/` artifact. Pushes to `master` and manual runs also deploy the artifact using GitHub's official Pages actions. The deployment job requests `pages: write` and `id-token: write`. Both workflows use Actions with Node.js 24 runtimes and Ubuntu 24.04 runners.
 
-If a repository or organization policy prevents that source update, the repository owner can use **Repository Settings → Pages → Build and deployment → Source → GitHub Actions**, then rerun the workflow. GitHub repository settings and publishing a Codex cloud environment are separate controls.
+The repository owner selects **Repository Settings → Pages → Build and deployment → Source → GitHub Actions** for the compiled site. The workflow deliberately does not modify administrative Pages settings with its deployment token: those configuration changes require different authorization from deploying an artifact. GitHub repository settings and publishing a Codex cloud environment are separate controls.
 
 The full application checks remain in `.github/workflows/ci.yml`, including real PostGIS integration tests. Pages deployment does not require, expose or replace the local database. For a later full public deployment, use a host capable of running Next.js server routes and a PostgreSQL/PostGIS instance, with authenticated administrator access.
