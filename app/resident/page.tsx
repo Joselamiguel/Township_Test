@@ -26,6 +26,9 @@ import WalkingRequirements from '@/components/walking/WalkingRequirements';
 import DepartureControl from '@/components/walking/DepartureControl';
 import RouteDetails from '@/components/walking/RouteDetails';
 import PlaceDiscovery from '@/components/walking/PlaceDiscovery';
+import WalkingConditions from '@/components/walking/WalkingConditions';
+import ComfortBreakdown from '@/components/walking/ComfortBreakdown';
+import type { EnvironmentLayer } from '@/lib/environment';
 import {
     buildGraph, nearestEdge, slotForHour, PROFILES,
     type Profile, type Mode, type TimeSlot, type PathNode, type PathEdge,
@@ -95,7 +98,7 @@ const STYLES = `
 
 .tg-map{position:relative; z-index:0; flex:1 1 0; min-height:10rem}
 
-.tg-sheet{flex:0 0 auto; max-height:58dvh; overflow-y:auto; background:var(--surface);
+.tg-sheet{flex:0 1 auto; min-height:0; max-height:58dvh; overflow-y:auto; background:var(--surface);
   border-top:var(--bw) solid var(--line); border-radius:20px 20px 0 0; padding:.8rem .85rem .9rem;
   box-shadow:0 -6px 18px rgba(0,0,0,.12)}
 
@@ -135,6 +138,20 @@ const STYLES = `
 
 .tg.rm *, .tg.rm *::before, .tg.rm *::after{animation:none !important; transition:none !important}
 @media (prefers-reduced-motion:reduce){ .tg *{animation:none !important; transition:none !important} }
+@media (max-width:1023px) and (max-height:600px){
+  .tg{height:auto;min-height:100dvh;overflow:visible}
+  .tg-map{height:45dvh;min-height:12rem;flex:none}
+  .tg-sheet{max-height:none;overflow:visible;flex:none}
+}
+@media (min-width:1024px){
+  .tg{max-width:none;display:grid;grid-template-columns:25rem minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);box-shadow:none}
+  .tg-topbar{grid-column:1 / -1}
+  .tg-header{padding:.65rem 1.2rem}
+  .tg-map{grid-column:2;grid-row:2;min-height:0}
+  .tg-sheet{grid-column:1;grid-row:2;max-height:none;min-height:0;border-top:0;border-right:2px solid var(--line);border-radius:0;padding:1.15rem;box-shadow:none}
+  .tg-backdrop{align-items:center}
+  .tg-modal{border-radius:20px}
+}
 `;
 
 /* ------------------------------------------------------------------ */
@@ -262,6 +279,7 @@ function ResidentPageContent() {
 
     // Hazard reporting
     const [showReportModal, setShowReportModal] = useState(false);
+    const [informationLayer, setInformationLayer] = useState<EnvironmentLayer | 'routes'>('routes');
     const [selectedKind, setSelectedKind] = useState<HazardKind>('broken_surface');
     const [reportNotes, setReportNotes] = useState('');
     const [isSubmittingReport, setIsSubmittingReport] = useState(false);
@@ -614,11 +632,14 @@ function ResidentPageContent() {
             <style dangerouslySetInnerHTML={{ __html: STYLES }} />
 
             {/* Top bar */}
+            <div className="tg-topbar">
+            <a href="#walk-planning" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[3000] focus:rounded-xl focus:bg-white focus:p-3 focus:font-bold focus:text-slate-900">Skip to walk planning</a>
             <header className="tg-header">
-                <div className="flex items-center gap-2">
-                    <Navigation size={22} aria-hidden />
+                <Link href="/" className="flex min-h-11 items-center gap-2 text-white no-underline" aria-label="TownshipGo home">
+                    <Footprints size={24} aria-hidden />
                     <span style={{ fontWeight: 800, fontSize: '1.15rem' }}>TownshipGo</span>
-                </div>
+                    <span className="ml-2 hidden text-sm font-medium opacity-90 sm:inline">A walk that fits your day</span>
+                </Link>
                 <button className="tg-iconbtn" onClick={() => setShowSettings(true)} aria-label="Text size and display settings">
                     <span style={{ fontSize: '1.15rem', fontWeight: 800 }} aria-hidden>Aa</span>
                     <span>Display</span>
@@ -645,6 +666,7 @@ function ResidentPageContent() {
                     }}>Try again</button>
                 </div>
             )}
+            </div>
 
             {/* Map */}
             <div className="tg-map">
@@ -659,18 +681,20 @@ function ResidentPageContent() {
                         startLabel={usingGPS ? 'You' : 'Start'}
                         reduceMotion={prefs.reduceMotion}
                         highContrast={prefs.highContrast}
+                        environment={walkingData ? { edges, records: walkingData.verifications, at: planningTime } : undefined}
+                        informationLayer={informationLayer}
+                        onInformationLayerChange={setInformationLayer}
                     />
                 </div>
             </div>
 
             {/* ---------------- Bottom panel ---------------- */}
-            <section className="tg-sheet" aria-live="polite">
+            <section id="walk-planning" aria-label="Walk planning" tabIndex={-1} className="tg-sheet" aria-live="polite">
 
                 {/* STEP 1: where to */}
                 {step === 'where' && (
                     <div className="tg-stack">
                         <h1 className="tg-h2">Where are you going?</h1>
-                        {planningControls}
 
                         <div role="radiogroup" aria-label="Destination" className="tg-stack">
                             {places.map((place) => { const d = { ...place, id: place.external_id || place.id }; return (
@@ -728,6 +752,9 @@ function ResidentPageContent() {
                             </div>
                         </div>
 
+                        {planningControls}
+                        <WalkingConditions night={isNight} forecast={forecast} onCompare={mode => { setChosenMode(mode); setStep('route'); }}
+                            onInspectCover={() => { setInformationLayer('cover'); setStep('route'); }} />
                         <PlaceDiscovery items={discovery} budget={needs.budget_min} onChoose={(asset: WalkingAsset) => {
                             chooseDest(asset.external_id || asset.id); setStep('route');
                         }} />
@@ -774,7 +801,6 @@ function ResidentPageContent() {
                         ) : (
                             <>
                                 <RouteQualityBar route={activeRoute} best={shownMode === recommended} />
-                                <RouteDetails route={activeRoute} />
                                 <div role="radiogroup" aria-label="Route choices" className="tg-stack">
                                     {visibleModes.map((m) => {
                                         const r = plan.routes[m];
@@ -813,6 +839,8 @@ function ResidentPageContent() {
                                         );
                                     })}
                                 </div>
+                                <ComfortBreakdown route={activeRoute} edges={edges} records={walkingData?.verifications ?? []} night={isNight} />
+                                <RouteDetails route={activeRoute} />
                                 <p className="tg-small" style={{ margin: 0 }}>
                                     On the map: solid line is Shortest, dashed is Shadiest, dotted is Best lit. Your chosen route is thicker.
                                 </p>

@@ -1,14 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { ReportMarker } from '@/lib/types';
-import type { WalkingAsset } from '@/lib/walking';
+import type { WalkingAsset, VerificationRecord } from '@/lib/walking';
+import type { PathEdge } from '@/lib/routing';
+import { environmentSegments, environmentCoverage, type EnvironmentLayer } from '@/lib/environment';
 import { DEFAULT_ORIGIN, DESTINATIONS } from '@/lib/precinct';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Plus, Minus, Route as RouteIcon } from 'lucide-react';
+import { Plus, Minus, Route as RouteIcon, Layers } from 'lucide-react';
 
 interface RouteItem {
     id: string;
@@ -52,6 +54,9 @@ interface InteractiveMapProps {
     assets?: WalkingAsset[];
     onLocationSelect?: (lat: number, lng: number) => void;
     selectedLocation?: [number, number];
+    environment?: { edges: PathEdge[]; records: VerificationRecord[]; at: string };
+    informationLayer?: EnvironmentLayer | 'routes';
+    onInformationLayerChange?: (layer: EnvironmentLayer | 'routes') => void;
 }
 
 function LocationPicker({ onSelect }: { onSelect?: (lat: number, lng: number) => void }) {
@@ -274,9 +279,18 @@ export default function InteractiveMap({
     assets = [],
     onLocationSelect,
     selectedLocation,
+    environment,
+    informationLayer,
+    onInformationLayerChange,
 }: InteractiveMapProps) {
     const brand = highContrast ? BRAND_HC : BRAND;
     const overview = pins !== undefined;
+    const [localLayer, setLocalLayer] = useState<EnvironmentLayer | 'routes'>('routes');
+    const layer = informationLayer ?? localLayer;
+    const layerEdges = environment?.edges, layerRecords = environment?.records, layerTime = environment?.at;
+    const segments = useMemo(() => layerEdges && layerRecords && layerTime && layer !== 'routes' ? environmentSegments(layerEdges, layerRecords, layerTime, layer) : [],
+        [layerEdges, layerRecords, layerTime, layer]);
+    const coverage = environmentCoverage(segments);
 
     /* ----- Walk mode ----- */
     const startIcon = useMemo(() => makePin('start', startLabel, brand), [startLabel, brand]);
@@ -368,6 +382,18 @@ export default function InteractiveMap({
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
                 <LocationPicker onSelect={onLocationSelect} />
+                {segments.map(segment => {
+                    const unknown = segment.value === null;
+                    const strength = typeof segment.value === 'boolean' ? Number(segment.value) : segment.value ?? 0;
+                    const color = unknown ? '#64748b' : layer === 'paths' ? '#475569' : layer === 'observations' ? '#5b55a1'
+                        : segment.source === 'reported' ? '#b45309' : strength >= .65 ? '#16765e' : '#b45309';
+                    return <Polyline key={`environment:${layer}:${segment.id}`} positions={segment.geometry.map(([lng, lat]) => [lat, lng] as [number, number])}
+                        pathOptions={{ color, weight: unknown ? 2 : 4, opacity: unknown ? .35 : .8,
+                            dashArray: unknown ? '3 7' : segment.source === 'checked' ? undefined : '9 5' }}>
+                        <Tooltip sticky><strong>{segment.name}</strong><p>{segment.detail}</p></Tooltip>
+                        <Popup {...popupProps}><strong>{segment.name}</strong><p>{segment.detail}</p></Popup>
+                    </Polyline>;
+                })}
                 {selectedLocation && <Marker position={selectedLocation} icon={assetIcon('selection')}><Popup>Selected mapping position</Popup></Marker>}
                 {assets.filter(a => a.kind !== 'destination').map(asset => <Marker key={`asset:${asset.id}`} position={[asset.lat, asset.lng]} icon={assetIcon(asset.kind)}>
                     <Tooltip>{asset.name}</Tooltip>
@@ -488,6 +514,20 @@ export default function InteractiveMap({
                     </>
                 )}
             </MapContainer>
+            {environment && <section aria-label="Map information layers" className="absolute left-3 top-3 z-[1100] max-h-[calc(100%-5.25rem)] w-56 max-w-[calc(100%-5.25rem)] overflow-y-auto rounded-xl border-2 border-slate-300 bg-white/95 p-2 text-slate-900 shadow-sm">
+                <label className="flex items-center gap-2 text-sm font-bold"><Layers size={18} className="shrink-0 text-emerald-800" aria-hidden />
+                    <select aria-label="Map information" value={layer} onChange={e => {
+                        const value = e.target.value as EnvironmentLayer | 'routes';
+                        setLocalLayer(value); onInformationLayerChange?.(value);
+                    }} className="min-h-11 min-w-0 flex-1 bg-transparent text-sm">
+                        <option value="routes">Walking routes</option><option value="paths">Pedestrian network</option><option value="shade">Shade records</option><option value="cover">Covered paths</option><option value="lighting">Lighting records</option><option value="observations">Field observations</option>
+                    </select>
+                </label>
+                {layer !== 'routes' && <div role="status" className="border-t border-slate-200 pt-2 text-xs leading-relaxed">
+                    <p className="font-semibold">{coverage.known} / {coverage.total} {layer === 'observations' ? 'with current observations' : 'with information'}</p>
+                    <p className="mt-1 text-slate-600">{layer === 'paths' ? 'Mapped paths; on-site conditions still need checking.' : 'At your selected departure. Dashed gray = unknown; open a line for its source.'}</p>
+                </div>}
+            </section>}
         </div>
     );
 }
