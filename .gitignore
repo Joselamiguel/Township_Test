@@ -3,6 +3,7 @@
 # dependencies
 /node_modules
 /.local/
+/public/pilot/
 /.pnp
 .pnp.*
 .yarn/*

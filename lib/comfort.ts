@@ -8,6 +8,13 @@ export interface WalkingWeather {
     uv_index: number | null; solar_irradiance: number | null; hourly: WeatherHour[];
 }
 const finite = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : null;
+export function weatherUrl(origin: [number, number]) {
+    const query = new URLSearchParams({ latitude: String(origin[0]), longitude: String(origin[1]),
+        current: 'temperature_2m,relative_humidity_2m,apparent_temperature,shortwave_radiation',
+        hourly: 'temperature_2m,apparent_temperature,precipitation_probability,precipitation',
+        forecast_days: '3', timezone: 'Asia/Kuala_Lumpur' });
+    return `https://api.open-meteo.com/v1/forecast?${query}`;
+}
 export function unavailableWeather(now: string): WalkingWeather {
     return { source: 'unavailable', as_of: now, timestamp: now, air_temp_c: null, feels_like_c: null,
         humidity: null, uv_index: null, solar_irradiance: null, hourly: [] };

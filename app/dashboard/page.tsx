@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import PreviewNotice from '@/components/walking/PreviewNotice';
+import { IS_PAGES_PREVIEW } from '@/lib/site';
 import {
     Footprints, AlertTriangle, AlertCircle, Lightbulb, Sun, Accessibility,
     MapPin, RefreshCw, Check, X, ClipboardList, Wallet,
@@ -126,6 +129,7 @@ export default function AdminDashboardPage() {
         }
 
         void loadData();
+        if (IS_PAGES_PREVIEW) return;
         const timer = setInterval(() => void loadData(true), POLL_MS);
         return () => clearInterval(timer);
     }, [refreshVersion]);
@@ -318,23 +322,24 @@ export default function AdminDashboardPage() {
 
     return (
         <div className="min-h-screen bg-[#f8f5f5] text-slate-800 font-sans pb-10">
+            <div className="mx-auto max-w-7xl px-4"><PreviewNotice /></div>
             {/* Header */}
-            <header className="bg-white border-b border-slate-200/80 border-t-4 border-t-[#A4262C] px-8 py-3 flex items-center justify-between sticky top-0 z-50">
-                <h1 className="text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
+            <header className="bg-white border-b border-slate-200/80 border-t-4 border-t-[#A4262C] px-4 sm:px-8 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50">
+                <h1 className="text-xl font-extrabold tracking-tight text-slate-900 flex flex-wrap items-center gap-2">
                     TownshipGo <span className="text-slate-300 font-normal">◆</span> <span className="text-slate-500 font-semibold text-base">Command Center</span>
                 </h1>
-                <div className="flex items-center gap-3">
-                    <a href="/verification" className="inline-flex min-h-11 items-center text-sm font-bold text-[#7F1D22] underline">Verification records</a>
+                <div className="flex flex-wrap items-center gap-3">
+                    <Link href="/verification" className="inline-flex min-h-11 items-center text-sm font-bold text-[#7F1D22] underline">Verification records</Link>
 
                     <span className="text-xs text-slate-500">
-                        {lastUpdated
+                        {IS_PAGES_PREVIEW ? 'Snapshot preview' : lastUpdated
                             ? `Updated ${lastUpdated.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })} · refreshes every 30 s`
                             : 'Loading…'}
                     </span>
                     <button
                         onClick={() => { setLoading(true); setRefreshVersion((value) => value + 1); }}
                         disabled={loading}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A4262C]"
+                        className="flex min-h-11 items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A4262C]"
                     >
                         <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden />
                         Refresh
@@ -348,10 +353,10 @@ export default function AdminDashboardPage() {
                 </div>
             )}
 
-            <main className="max-w-[1500px] mx-auto px-6 mt-6 space-y-6">
+            <main className="max-w-[1500px] mx-auto px-4 sm:px-6 mt-6 space-y-6">
 
                 {/* KPI strip */}
-                <section aria-label="Key figures" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+                <section aria-label="Key figures" className="grid grid-cols-1 min-[480px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
                     <Kpi Icon={ClipboardList} label="Open defects" value={metrics.open.toLocaleString()} sub="Waiting for a fix" />
                     <Kpi Icon={AlertTriangle} label="Critical blockers" value={metrics.blockers.toLocaleString()} sub="Stop some people walking" />
                     <Kpi Icon={Wallet} label="Backlog cost" value={`RM ${metrics.cost.toLocaleString()}`} sub="Estimated, all open defects" />
@@ -486,7 +491,7 @@ export default function AdminDashboardPage() {
                                             <td colSpan={7} className="py-12 text-center">
                                                 <Check className="w-8 h-8 mx-auto text-emerald-600" aria-hidden />
                                                 <p className="mt-2 font-bold text-slate-800">
-                                                    {rankedAll.length === 0 ? 'All clear. There are no open defects.' : 'No open defects of this type.'}
+                                                    {IS_PAGES_PREVIEW ? 'Shared maintenance reports are unavailable in this preview.' : rankedAll.length === 0 ? 'All clear. There are no open defects.' : 'No open defects of this type.'}
                                                 </p>
                                             </td>
                                         </tr>

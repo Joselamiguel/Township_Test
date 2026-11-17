@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
     MapPin, Navigation, LocateFixed, Thermometer, Moon, Sun, X, Send, Share2, Check,
@@ -10,7 +11,8 @@ import {
     AlertTriangle, Phone, MessageCircle, Copy, Volume2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { loadGraph as fetchGraph, loadHazards, loadReports, submitReport, loadWalkingData } from '@/lib/api';
+import { loadGraph as fetchGraph, loadHazards, loadReports, submitReport, loadWalkingData, loadWeather } from '@/lib/api';
+import { IS_PAGES_PREVIEW } from '@/lib/site';
 import type { ReportMarker } from '@/lib/types';
 import { useClientReady } from '@/lib/use-client-ready';
 import { readWalkParameters } from '@/lib/walk-parameters';
@@ -320,11 +322,9 @@ function ResidentPageContent() {
 
     /* ---------- Data ---------- */
     useEffect(() => {
-        async function loadWeather() {
+        async function refreshWeather() {
             try {
-                const res = await fetch('/api/weather');
-                if (!res.ok) throw new Error(String(res.status));
-                setWeather(await res.json());
+                setWeather(await loadWeather());
             } catch {
                 setWeather(null);
             }
@@ -349,7 +349,7 @@ function ResidentPageContent() {
             }
         }
 
-        void loadWeather();
+        void refreshWeather();
         void loadGraph();
     }, [reloadVersion]);
 
@@ -625,6 +625,10 @@ function ResidentPageContent() {
                 </button>
             </header>
 
+            {IS_PAGES_PREVIEW && <div className="tg-banner" style={{ fontSize: '.75rem' }}>
+                <span>Interactive preview · OSM snapshot: 18 Oct 2026 · shared reports unavailable</span>
+            </div>}
+
             {/* Friendly weather line */}
             {!isNavigating && (
                 <div className="tg-banner" role="status">
@@ -729,7 +733,7 @@ function ResidentPageContent() {
                         }} />
                         <div className="flex flex-wrap gap-3 text-sm font-bold">
                             <button type="button" onClick={() => setReloadVersion(v => v + 1)} className="min-h-11 underline">Refresh paths & checks</button>
-                            <a href="/verification" className="inline-flex min-h-11 items-center underline">Verification records</a>
+                            <Link href="/verification" className="inline-flex min-h-11 items-center underline">Verification records</Link>
                         </div>
                         <button className="tg-btn tg-btn-primary" onClick={() => { buzz(); setStep('route'); }}>
                             Show my routes
@@ -857,9 +861,10 @@ function ResidentPageContent() {
 
                         {activeRoute && <RouteQualityBar route={activeRoute} best={shownMode === recommended} />}
 
-                        <button className="tg-btn tg-btn-primary" onClick={() => { setShowReportModal(true); setReportMsg(null); buzz(); }}>
+                        <button disabled={IS_PAGES_PREVIEW} className="tg-btn tg-btn-primary" onClick={() => { setShowReportModal(true); setReportMsg(null); buzz(); }}>
                             <AlertTriangle size={24} aria-hidden /> Report a problem
                         </button>
+                        {IS_PAGES_PREVIEW && <p className="tg-small">Shared reporting is unavailable in this public preview.</p>}
 
                         <div className="grid grid-cols-2 gap-2">
                             <button className="tg-btn" onClick={openShare}>
