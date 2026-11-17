@@ -88,7 +88,7 @@ const STYLES = `
 .tg *{box-sizing:border-box}
 .tg :focus-visible{outline:4px solid #1A56DB; outline-offset:3px}
 
-.tg-header{background:var(--brand); color:#fff; display:flex; align-items:center; justify-content:space-between;
+.tg-header{background:var(--brand); color:#fff; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
   gap:.75rem; padding:.35rem .75rem; min-height:3.25rem}
 .tg-iconbtn{min-height:2.75rem; padding:0 .7rem; border-radius:14px; border:2px solid rgba(255,255,255,.85);
   background:transparent; color:#fff; font-weight:700; font-size:.9rem; display:flex; align-items:center; gap:.4rem; cursor:pointer}
