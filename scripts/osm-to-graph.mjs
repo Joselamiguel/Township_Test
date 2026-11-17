@@ -3,11 +3,11 @@
  * Overpass JSON ("out geom") -> pedestrian graph.
  *
  *   node scripts/osm-to-graph.mjs --in precinct.json \
- *        --out-json graph.json --out-sql graph.sql --out-audit-csv edges_for_audit.csv [--no-streets]
+ *        --out-json .local/pedestrian-graph.json [--out-sql f] [--out-audit-csv f]
  *
  * What it does:
- *  - drops motorways, trunk, primary, secondary and tertiary roads, so routes can never run along a highway
- *    (a pedestrian only meets a major road at a mapped crossing, which arrives as its own footway=crossing way)
+ *  - includes dedicated footpaths, steps and mapped crossings; excludes road carriageways
+ *  - includes cycleways, service paths and tracks only with explicit public foot access
  *  - splits every way at junctions, so edges run junction to junction
  *  - copies the few useful OSM tags (steps, crossing type, kerb, incline, lit, covered)
  *  - marks every OSM-derived hint as "modelled" so a field audit can overwrite it
@@ -24,18 +24,14 @@ const inFile = get('--in');
 const outJson = get('--out-json');
 const outSql = get('--out-sql');
 const outAudit = get('--out-audit-csv');
-const includeStreets = !args.includes('--no-streets');
 if (!inFile) {
-  console.error('Usage: node scripts/osm-to-graph.mjs --in overpass.json [--out-json f] [--out-sql f] [--out-audit-csv f] [--no-streets]');
+  console.error('Usage: node scripts/osm-to-graph.mjs --in overpass.json [--out-json f] [--out-sql f] [--out-audit-csv f]');
   process.exit(1);
 }
 
-const EXCLUDED_ROADS = new Set([
-  'motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link',
-  'secondary', 'secondary_link', 'tertiary', 'tertiary_link',
-]);
-const STREETS = new Set(['residential', 'living_street', 'unclassified']);
-const WALKWAYS = new Set(['footway', 'path', 'pedestrian', 'steps', 'service', 'track', 'cycleway']);
+const WALKWAYS = new Set(['footway', 'path', 'pedestrian', 'steps', 'crossing']);
+const SHARED_PATHS = new Set(['cycleway', 'service', 'track']);
+const PUBLIC_FOOT_ACCESS = new Set(['yes', 'designated', 'permissive']);
 
 // ---------------------------------------------------------------- helpers
 const R = 6371000;
@@ -63,10 +59,10 @@ const raw = JSON.parse(fs.readFileSync(inFile, 'utf8'));
 const ways = (raw.elements || []).filter((el) => {
   if (el.type !== 'way' || !el.nodes || !el.geometry || el.nodes.length !== el.geometry.length) return false;
   const hw = el.tags?.highway;
-  if (!hw || EXCLUDED_ROADS.has(hw)) return false;
-  if (el.tags.foot === 'no' || el.tags.access === 'private' || el.tags.access === 'no') return false;
-  if (STREETS.has(hw)) return includeStreets;
-  return WALKWAYS.has(hw);
+  if (!hw || (el.tags.foot && !PUBLIC_FOOT_ACCESS.has(el.tags.foot))) return false;
+  const explicitFootAccess = PUBLIC_FOOT_ACCESS.has(el.tags.foot);
+  if (el.tags.access && !['yes', 'designated', 'permissive', 'public'].includes(el.tags.access) && !explicitFootAccess) return false;
+  return WALKWAYS.has(hw) || (SHARED_PATHS.has(hw) && explicitFootAccess);
 });
 
 // ---------------------------------------------------------------- break nodes
@@ -88,14 +84,14 @@ function tagsToAttrs(t) {
     else if (t.crossing === 'zebra' || t.crossing === 'marked') crossingType = 'zebra';
     else crossingType = 'uncontrolled';
   }
-  const kind = isCrossing ? 'crossing' : isSteps ? 'steps' : STREETS.has(hw) ? 'street'
+  const kind = isCrossing ? 'crossing' : isSteps ? 'steps'
     : ['footway', 'path', 'pedestrian', 'service'].includes(hw) ? hw : 'path';
   let kerb = null;
   if (t.kerb === 'lowered' || t.kerb === 'flush') kerb = true;
   else if (t.kerb === 'raised') kerb = false;
 
   const attrs = {
-    kind, surface: t.surface ?? null,
+    kind, source_highway: hw, pedestrian_access: true, surface: t.surface ?? null,
     has_steps: isSteps, slope_pct: parseIncline(t.incline),
     is_crossing: isCrossing, crossing_type: crossingType,
     has_kerb_ramp: isCrossing ? kerb : null,
@@ -157,9 +153,9 @@ if (outSql) {
   for (const n of nodeList) lines.push(`insert into path_nodes (id, lat, lng) values (${n.id}, ${n.lat}, ${n.lng}) on conflict (id) do nothing;`);
   for (const e of edges) {
     lines.push(
-      'insert into path_edges (id, from_node, to_node, osm_way_id, name, geometry, length_m, kind, surface, has_steps, slope_pct, ' +
+      'insert into path_edges (id, from_node, to_node, osm_way_id, name, source_highway, pedestrian_access, geometry, length_m, kind, surface, has_steps, slope_pct, ' +
       'is_crossing, crossing_type, has_kerb_ramp, has_tactile, shade_morning, shade_midday, shade_afternoon, shade_source, lit_ratio, lighting_source) values (' +
-      [e.id, e.from_node, e.to_node, e.osm_way_id, sqlStr(e.name), `${sqlStr(JSON.stringify(e.geometry))}::jsonb`, e.length_m,
+      [e.id, e.from_node, e.to_node, e.osm_way_id, sqlStr(e.name), sqlStr(e.source_highway), 'true', `${sqlStr(JSON.stringify(e.geometry))}::jsonb`, e.length_m,
        sqlStr(e.kind), sqlStr(e.surface), sqlBool(e.has_steps), sqlNum(e.slope_pct),
        sqlBool(e.is_crossing), sqlStr(e.crossing_type), sqlBool(e.has_kerb_ramp), sqlBool(e.has_tactile),
        sqlNum(e.shade_morning), sqlNum(e.shade_midday), sqlNum(e.shade_afternoon), sqlStr(e.shade_source),

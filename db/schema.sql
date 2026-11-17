@@ -1,0 +1,123 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE IF NOT EXISTS app_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS path_nodes (
+    id BIGINT PRIMARY KEY,
+    lat DOUBLE PRECISION NOT NULL CHECK (lat BETWEEN -90 AND 90),
+    lng DOUBLE PRECISION NOT NULL CHECK (lng BETWEEN -180 AND 180),
+    geom geometry(Point, 4326) GENERATED ALWAYS AS (
+        ST_SetSRID(ST_MakePoint(lng, lat), 4326)
+    ) STORED
+);
+
+CREATE TABLE IF NOT EXISTS path_edges (
+    id BIGINT PRIMARY KEY,
+    from_node BIGINT NOT NULL REFERENCES path_nodes(id),
+    to_node BIGINT NOT NULL REFERENCES path_nodes(id),
+    osm_way_id BIGINT,
+    name TEXT,
+    source_highway TEXT NOT NULL,
+    pedestrian_access BOOLEAN NOT NULL CHECK (pedestrian_access),
+    geometry JSONB NOT NULL,
+    geom geometry(LineString, 4326) GENERATED ALWAYS AS (
+        ST_SetSRID(ST_GeomFromGeoJSON('{"type":"LineString","coordinates":' || geometry::text || '}'), 4326)
+    ) STORED,
+    length_m DOUBLE PRECISION NOT NULL CHECK (length_m > 0),
+    kind TEXT NOT NULL CHECK (kind IN ('footway', 'path', 'pedestrian', 'steps', 'crossing', 'service')),
+    surface TEXT,
+    has_steps BOOLEAN NOT NULL DEFAULT FALSE,
+    slope_pct DOUBLE PRECISION,
+    surface_rating INT CHECK (surface_rating IN (1, 2, 3)),
+    is_crossing BOOLEAN NOT NULL DEFAULT FALSE,
+    crossing_type TEXT CHECK (crossing_type IN ('signalised', 'zebra', 'uncontrolled')),
+    crossing_width_m DOUBLE PRECISION,
+    ped_green_s DOUBLE PRECISION,
+    cycle_s DOUBLE PRECISION,
+    has_kerb_ramp BOOLEAN,
+    has_refuge BOOLEAN,
+    has_tactile BOOLEAN,
+    shade_morning DOUBLE PRECISION CHECK (shade_morning BETWEEN 0 AND 1),
+    shade_midday DOUBLE PRECISION CHECK (shade_midday BETWEEN 0 AND 1),
+    shade_afternoon DOUBLE PRECISION CHECK (shade_afternoon BETWEEN 0 AND 1),
+    shade_source TEXT CHECK (shade_source IN ('audited', 'reported', 'modelled', 'assumed')),
+    lit_ratio DOUBLE PRECISION CHECK (lit_ratio BETWEEN 0 AND 1),
+    lighting_source TEXT CHECK (lighting_source IN ('audited', 'reported', 'modelled', 'assumed'))
+);
+
+CREATE TABLE IF NOT EXISTS hazard_reports (
+    id BIGSERIAL PRIMARY KEY,
+    edge_id BIGINT NOT NULL REFERENCES path_edges(id),
+    lat DOUBLE PRECISION NOT NULL CHECK (lat BETWEEN -90 AND 90),
+    lng DOUBLE PRECISION NOT NULL CHECK (lng BETWEEN -180 AND 180),
+    kind TEXT NOT NULL CHECK (kind IN ('blocked', 'no_ramp', 'light_out', 'no_shade', 'broken_surface')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'verified', 'fixed')),
+    reporter_role TEXT NOT NULL DEFAULT 'resident',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS defect_reports (
+    id BIGSERIAL PRIMARY KEY,
+    hazard_report_id BIGINT NOT NULL UNIQUE REFERENCES hazard_reports(id),
+    edge_id BIGINT NOT NULL REFERENCES path_edges(id),
+    lat DOUBLE PRECISION NOT NULL,
+    lng DOUBLE PRECISION NOT NULL,
+    kind TEXT NOT NULL,
+    description TEXT NOT NULL,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('blocker', 'comfort')),
+    location_name TEXT NOT NULL,
+    estimated_cost_rm DOUBLE PRECISION NOT NULL CHECK (estimated_cost_rm >= 0),
+    reported_by_proxy BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'pending_capex_review' CHECK (status IN ('pending_capex_review', 'fixed')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_path_nodes_geom ON path_nodes USING GIST(geom);
+CREATE INDEX IF NOT EXISTS idx_path_edges_geography ON path_edges USING GIST((geom::geography));
+CREATE INDEX IF NOT EXISTS idx_hazard_reports_open ON hazard_reports(edge_id) WHERE status <> 'fixed';
+CREATE INDEX IF NOT EXISTS idx_defect_reports_open ON defect_reports(created_at) WHERE status <> 'fixed';
+
+-- Additive upgrade: existing graphs, reports and audits are retained.
+ALTER TABLE path_edges ADD COLUMN IF NOT EXISTS covered BOOLEAN;
+
+CREATE TABLE IF NOT EXISTS walking_assets (
+    id BIGSERIAL PRIMARY KEY,
+    external_id TEXT UNIQUE,
+    parent_id BIGINT REFERENCES walking_assets(id),
+    kind TEXT NOT NULL CHECK (kind IN ('destination', 'entrance', 'rest', 'shelter', 'toilet', 'water', 'transit')),
+    category TEXT NOT NULL CHECK (category IN ('healthcare', 'food', 'park', 'community', 'shopping', 'transport', 'other')),
+    name TEXT NOT NULL,
+    lat DOUBLE PRECISION NOT NULL CHECK (lat BETWEEN -90 AND 90),
+    lng DOUBLE PRECISION NOT NULL CHECK (lng BETWEEN -180 AND 180),
+    geom geometry(Point, 4326) GENERATED ALWAYS AS (ST_SetSRID(ST_MakePoint(lng, lat), 4326)) STORED,
+    source TEXT NOT NULL CHECK (source IN ('osm', 'community', 'survey')),
+    source_ref TEXT NOT NULL DEFAULT '',
+    properties JSONB NOT NULL DEFAULT '{}',
+    edge_id BIGINT REFERENCES path_edges(id),
+    edge_fraction DOUBLE PRECISION CHECK (edge_fraction BETWEEN 0 AND 1),
+    connection_distance_m DOUBLE PRECISION,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK ((edge_id IS NULL) = (edge_fraction IS NULL))
+);
+
+CREATE TABLE IF NOT EXISTS verification_records (
+    id BIGSERIAL PRIMARY KEY,
+    target_type TEXT NOT NULL CHECK (target_type IN ('path', 'crossing', 'entrance', 'facility')),
+    target_id BIGINT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('verified', 'reported', 'unverified')),
+    observed_at TIMESTAMPTZ NOT NULL,
+    valid_until TIMESTAMPTZ,
+    reviewer TEXT NOT NULL,
+    method TEXT NOT NULL CHECK (method IN ('site_visit', 'photo_review', 'operator_record', 'osm_import')),
+    source_ref TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    attributes JSONB NOT NULL CHECK (jsonb_typeof(attributes) = 'object'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (valid_until IS NULL OR valid_until > observed_at)
+);
+CREATE INDEX IF NOT EXISTS idx_walking_assets_parent ON walking_assets(parent_id);
+CREATE INDEX IF NOT EXISTS idx_verification_target ON verification_records(target_type, target_id, observed_at DESC, id DESC);

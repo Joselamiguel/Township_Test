@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo } from 'react';
 import type { CSSProperties } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap } from 'react-leaflet';
+import type { ReportMarker } from '@/lib/types';
+import type { WalkingAsset } from '@/lib/walking';
+import { DEFAULT_ORIGIN, DESTINATIONS } from '@/lib/precinct';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Plus, Minus, Route as RouteIcon } from 'lucide-react';
@@ -28,7 +31,7 @@ interface OverviewPin {
 interface InteractiveMapProps {
     routes?: RouteItem[];
     activeRouteId?: string;
-    reports?: any[];
+    reports?: ReportMarker[];
     startCoords?: [number, number];
     endCoords?: [number, number];
     /** "Start" for the default origin, "You" when using GPS */
@@ -46,7 +49,18 @@ interface InteractiveMapProps {
     onPinSelect?: (id: string | number) => void;
     /** Text of the "fit everything" button */
     fitLabel?: string;
+    assets?: WalkingAsset[];
+    onLocationSelect?: (lat: number, lng: number) => void;
+    selectedLocation?: [number, number];
 }
+
+function LocationPicker({ onSelect }: { onSelect?: (lat: number, lng: number) => void }) {
+    useMapEvents({ click: event => onSelect?.(event.latlng.lat, event.latlng.lng) });
+    return null;
+}
+
+const assetIcon = (kind: string) => L.divIcon({ className: '', iconSize: [28,28], iconAnchor: [14,14],
+    html: `<span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:2px solid #fff;border-radius:6px;background:#1D4ED8;color:white;font:bold 14px system-ui;box-shadow:0 1px 4px #333">${kind === 'rest' ? 'S' : kind === 'entrance' ? 'E' : kind === 'toilet' ? 'WC' : kind === 'water' ? 'W' : '+'}</span>` });
 
 /* ---------- Brand colours (muted Sime Darby red) ---------- */
 const BRAND = '#A4262C';
@@ -247,8 +261,8 @@ export default function InteractiveMap({
     routes = [],
     activeRouteId = '',
     reports = [],
-    startCoords = [3.1223, 101.6580],
-    endCoords = [3.1143, 101.6613],
+    startCoords = DEFAULT_ORIGIN,
+    endCoords = DESTINATIONS[0].coords,
     startLabel = 'Start',
     reduceMotion = false,
     highContrast = false,
@@ -257,6 +271,9 @@ export default function InteractiveMap({
     hoveredPinId = null,
     onPinSelect,
     fitLabel,
+    assets = [],
+    onLocationSelect,
+    selectedLocation,
 }: InteractiveMapProps) {
     const brand = highContrast ? BRAND_HC : BRAND;
     const overview = pins !== undefined;
@@ -268,7 +285,7 @@ export default function InteractiveMap({
     // Group problems reported at (almost) the same spot, and nudge a group aside if it sits on the start or destination pin
     const hazardGroups = useMemo(() => {
         if (overview) return [];
-        const groups = new Map<string, { lat: number; lng: number; items: any[] }>();
+        const groups = new Map<string, { lat: number; lng: number; items: ReportMarker[] }>();
         reports.forEach((r) => {
             const lat = r.lat ?? r.latitude;
             const lng = r.lng ?? r.longitude;
@@ -350,6 +367,12 @@ export default function InteractiveMap({
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
+                <LocationPicker onSelect={onLocationSelect} />
+                {selectedLocation && <Marker position={selectedLocation} icon={assetIcon('selection')}><Popup>Selected mapping position</Popup></Marker>}
+                {assets.filter(a => a.kind !== 'destination').map(asset => <Marker key={`asset:${asset.id}`} position={[asset.lat, asset.lng]} icon={assetIcon(asset.kind)}>
+                    <Tooltip>{asset.name}</Tooltip>
+                    <Popup><strong>{asset.name}</strong><p>{asset.kind === 'rest' ? 'Mapped seating / rest facility' : asset.kind === 'entrance' ? 'Mapped access point' : asset.kind}</p><p>Source: {asset.source}. See route details and verification records for current checks.</p></Popup>
+                </Marker>)}
 
                 <MapBehavior
                     points={fitPoints}

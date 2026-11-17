@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import dynamic from 'next/dynamic';
 import {
-    Leaf, Footprints, AlertTriangle, AlertCircle, Lightbulb, Sun, Accessibility,
+    Footprints, AlertTriangle, AlertCircle, Lightbulb, Sun, Accessibility,
     MapPin, RefreshCw, Check, X, ClipboardList, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { loadReports, markReportFixed, loadWalkingData } from '@/lib/api';
+import type { MaintenanceDefect } from '@/lib/types';
+import { DEFAULT_ORIGIN, PRECINCT_NAME } from '@/lib/precinct';
 import {
     rankInterventions,
     estimateDefectCost,
@@ -18,25 +20,8 @@ import {
 
 const InteractiveMap = dynamic(() => import('@/components/map/InteractiveMap'), { ssr: false });
 
-const BRAND = '#A4262C';
 const POLL_MS = 30_000;
-const DEFAULT_CENTER: [number, number] = [3.1223, 101.6580];
-
-const SEED_DEFECTS = [
-    { id: 'demo-1', category: 'Universal Design', severity: 'blocker', description: 'Missing Curb Ramp / Bad Sidewalk', location_name: 'Lengkok Cendakia', estimated_cost_rm: estimateDefectCost('no_ramp', 20), edge_id: 102, lat: 3.1215, lng: 101.6565 },
-    { id: 'demo-2', category: 'Safety Electrical', severity: 'comfort', description: 'Malfunctioning Lamp Post', location_name: 'PASUM / Dataran Sains', estimated_cost_rm: estimateDefectCost('light_out', 20), edge_id: 104, lat: 3.1225, lng: 101.6585 },
-    { id: 'demo-3', category: 'Safety Electrical', severity: 'comfort', description: 'Broken Streetlight', location_name: 'Dewan Kuliah 3 Walkway', estimated_cost_rm: estimateDefectCost('light_out', 20), edge_id: 101, lat: 3.1230, lng: 101.6575 },
-    { id: 'demo-4', category: 'Shade Infrastructure', severity: 'comfort', description: 'Uncovered Heat Gap', location_name: 'Lingkungan Budi', estimated_cost_rm: estimateDefectCost('no_shade', 35), edge_id: 103, lat: 3.1205, lng: 101.6590 },
-];
-
-// When a defect is fixed, the matching resident hazard is closed too so routes stop avoiding it
-const HAZARD_KIND_BY_CATEGORY: Record<string, string> = {
-    'Access Barrier': 'blocked',
-    'Universal Design': 'no_ramp',
-    'Safety Electrical': 'light_out',
-    'Pavement Renewal': 'broken_surface',
-    'Shade Infrastructure': 'no_shade',
-};
+const DEFAULT_CENTER = DEFAULT_ORIGIN;
 
 type Kind = 'shade' | 'light' | 'ramp' | 'crossing';
 type Filter = 'all' | Kind;
@@ -105,9 +90,9 @@ function Kpi({ Icon, label, value, sub }: { Icon: LucideIcon; label: string; val
 }
 
 export default function AdminDashboardPage() {
-    const [defects, setDefects] = useState<any[]>([]);
+    const [defects, setDefects] = useState<MaintenanceDefect[]>([]);
     const [loading, setLoading] = useState(true);
-    const [usingDemo, setUsingDemo] = useState(false);
+    const [dataCounts, setDataCounts] = useState({ places: 0, observations: 0 });
     const [loadError, setLoadError] = useState(false);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -122,40 +107,28 @@ export default function AdminDashboardPage() {
 
     /* ---------------- Data ---------------- */
 
-    async function loadData(silent = false) {
-        if (!silent) setLoading(true);
-        try {
-            const { data, error } = await supabase.from('defect_reports').select('*').neq('status', 'fixed');
-            if (error) throw error;
-
-            const live = data ?? [];
-            if (live.length > 0) {
-                setDefects(live);
-                setUsingDemo(false);
-            } else if (!silent) {
-                // Nothing in the database yet: show the demo set, clearly labelled
-                setDefects(SEED_DEFECTS);
-                setUsingDemo(true);
-            }
-            setLoadError(false);
-        } catch (err) {
-            console.error('Error fetching admin dashboard data:', err);
-            setLoadError(true);
-            if (!silent) {
-                setDefects(SEED_DEFECTS);
-                setUsingDemo(true);
-            }
-        } finally {
-            setLastUpdated(new Date());
-            if (!silent) setLoading(false);
-        }
-    }
+    const [refreshVersion, setRefreshVersion] = useState(0);
 
     useEffect(() => {
-        loadData();
-        const timer = setInterval(() => loadData(true), POLL_MS);
+        async function loadData(silent = false) {
+            try {
+                const [{ reports }, walking] = await Promise.all([loadReports(), loadWalkingData()]);
+                setDefects(reports);
+                setDataCounts({ places: walking.assets.filter(a => ['destination','transit'].includes(a.kind)).length, observations: walking.verifications.length });
+                setLoadError(false);
+                setLastUpdated(new Date());
+            } catch (err) {
+                console.error('Error fetching admin dashboard data:', err);
+                setLoadError(true);
+            } finally {
+                if (!silent) setLoading(false);
+            }
+        }
+
+        void loadData();
+        const timer = setInterval(() => void loadData(true), POLL_MS);
         return () => clearInterval(timer);
-    }, []);
+    }, [refreshVersion]);
 
     // Notices fade away on their own
     useEffect(() => {
@@ -181,7 +154,7 @@ export default function AdminDashboardPage() {
     /* ---------------- Ranking ---------------- */
 
     const defectById = useMemo(() => {
-        const m = new Map<string, any>();
+        const m = new Map<string, MaintenanceDefect>();
         defects.forEach((d) => m.set(String(d.id), d));
         return m;
     }, [defects]);
@@ -198,7 +171,7 @@ export default function AdminDashboardPage() {
                 : estimateDefectCost(kind, 20);
 
             return {
-                id: d.id,
+                id: String(d.id),
                 label: d.description || d.category,
                 kind,
                 cost_rm: cost,
@@ -246,14 +219,10 @@ export default function AdminDashboardPage() {
     /* ---------------- KPIs (all open defects, not just the filtered ones) ---------------- */
 
     const metrics = useMemo(() => {
-        const footfall = rankedAll.reduce((acc, i) => acc + (i.users_low + i.users_high) / 2, 0);
-        const exposureMinutes = rankedAll.reduce((acc, i) => acc + i.annual_exposure_removed, 0);
         return {
             open: rankedAll.length,
             blockers: rankedAll.filter((i) => i.severity === 'blocker').length,
             cost: rankedAll.reduce((acc, i) => acc + i.cost_rm, 0),
-            footfall: Math.round(footfall),
-            sunHours: Math.round(exposureMinutes / 60),
         };
     }, [rankedAll]);
 
@@ -278,7 +247,7 @@ export default function AdminDashboardPage() {
                 rank: rankOf.get(String(item.id)) ?? 0,
                 severity: item.severity as 'blocker' | 'comfort',
                 title: item.label,
-                detail: d?.location_name,
+                detail: d?.location_name ?? undefined,
             }];
         });
     }, [visibleItems, defectById, rankOf]);
@@ -309,44 +278,11 @@ export default function AdminDashboardPage() {
         setConfirmFixId(null);
         setFixingId(id);
 
-        let routingWarning: string | null = null;
-
         try {
-            if (!id.startsWith('demo-')) {
-                const { data, error } = await supabase
-                    .from('defect_reports')
-                    .update({ status: 'fixed' })
-                    .eq('id', defect.id)
-                    .select('id');
-
-                if (error || !data || data.length === 0) {
-                    setNotice({
-                        tone: 'error',
-                        text: error ? `Could not mark as fixed: ${error.message}` : 'Nothing was updated. Check the database permissions for defect_reports.',
-                    });
-                    return;
-                }
-
-                // Close the matching resident hazard so walking routes stop avoiding this spot
-                const hazardKind = HAZARD_KIND_BY_CATEGORY[defect.category];
-                if (defect.edge_id != null && hazardKind) {
-                    const { error: hErr } = await supabase
-                        .from('hazard_reports')
-                        .update({ status: 'fixed' })
-                        .eq('edge_id', defect.edge_id)
-                        .eq('kind', hazardKind)
-                        .neq('status', 'fixed');
-                    if (hErr) routingWarning = hErr.message;
-                }
-            }
-
+            await markReportFixed(id);
             setDefects((prev) => prev.filter((d) => String(d.id) !== id));
             setSelectedId((cur) => (cur === id ? null : cur));
-            setNotice(
-                routingWarning
-                    ? { tone: 'warn', text: `Marked as fixed, but resident routes may still avoid it (${routingWarning}).` }
-                    : { tone: 'ok', text: 'Marked as fixed.' },
-            );
+            setNotice({ tone: 'ok', text: 'Marked as fixed.' });
         } catch (err) {
             console.error('Failed to update defect state:', err);
             setNotice({ tone: 'error', text: 'Something went wrong. Please try again.' });
@@ -388,18 +324,15 @@ export default function AdminDashboardPage() {
                     TownshipGo <span className="text-slate-300 font-normal">◆</span> <span className="text-slate-500 font-semibold text-base">Command Center</span>
                 </h1>
                 <div className="flex items-center gap-3">
-                    {usingDemo && (
-                        <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                            Demo data
-                        </span>
-                    )}
+                    <a href="/verification" className="inline-flex min-h-11 items-center text-sm font-bold text-[#7F1D22] underline">Verification records</a>
+
                     <span className="text-xs text-slate-500">
                         {lastUpdated
                             ? `Updated ${lastUpdated.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })} · refreshes every 30 s`
                             : 'Loading…'}
                     </span>
                     <button
-                        onClick={() => loadData()}
+                        onClick={() => { setLoading(true); setRefreshVersion((value) => value + 1); }}
                         disabled={loading}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A4262C]"
                     >
@@ -411,7 +344,7 @@ export default function AdminDashboardPage() {
 
             {loadError && (
                 <div role="alert" className="bg-amber-50 border-b border-amber-300 text-amber-900 text-sm font-semibold px-8 py-2">
-                    We could not reach the database{usingDemo ? ', so demo data is shown' : ', so these figures may be out of date'}.
+                    We could not load the latest reports. These figures may be out of date.
                 </div>
             )}
 
@@ -422,8 +355,8 @@ export default function AdminDashboardPage() {
                     <Kpi Icon={ClipboardList} label="Open defects" value={metrics.open.toLocaleString()} sub="Waiting for a fix" />
                     <Kpi Icon={AlertTriangle} label="Critical blockers" value={metrics.blockers.toLocaleString()} sub="Stop some people walking" />
                     <Kpi Icon={Wallet} label="Backlog cost" value={`RM ${metrics.cost.toLocaleString()}`} sub="Estimated, all open defects" />
-                    <Kpi Icon={Footprints} label="Footfall protected" value={metrics.footfall.toLocaleString()} sub="Estimated people a week" />
-                    <Kpi Icon={Leaf} label="Sun exposure avoided" value={`${metrics.sunHours.toLocaleString()} hrs`} sub="Estimated, per year" />
+                    <Kpi Icon={Footprints} label="Mapped places" value={dataCounts.places.toLocaleString()} sub="Recorded destinations & stops" />
+                    <Kpi Icon={ClipboardList} label="Verification records" value={dataCounts.observations.toLocaleString()} sub="Observation history, all statuses" />
                 </section>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -434,7 +367,7 @@ export default function AdminDashboardPage() {
                             <div className="absolute top-4 left-4 z-[1100] bg-white/95 shadow-md rounded-xl px-3 py-1.5 border border-slate-200 flex items-center gap-2 max-w-[60%]">
                                 <MapPin className="w-4 h-4 text-[#A4262C] flex-shrink-0" aria-hidden />
                                 <span className="text-xs font-bold text-slate-800 truncate">
-                                    {selectedDefect?.location_name ?? 'Universiti Malaya precinct'}
+                                    {selectedDefect?.location_name ?? PRECINCT_NAME}
                                 </span>
                             </div>
                             <div className="absolute inset-2 rounded-xl overflow-hidden">
@@ -619,7 +552,6 @@ export default function AdminDashboardPage() {
                             <p className="text-xs text-slate-500 border-t border-slate-100 pt-3">
                                 Showing <b className="tabular-nums">{visibleItems.length}</b> of <b className="tabular-nums">{rankedAll.length}</b> open defects
                                 · <b className="tabular-nums">RM {shownCost.toLocaleString()}</b> estimated
-                                {usingDemo && ' · demo data, changes are not saved'}
                             </p>
                         )}
                     </div>

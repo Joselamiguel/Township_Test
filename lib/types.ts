@@ -1,3 +1,27 @@
+/** Report fields shared by resident hazard pins and dashboard defects. */
+export interface ReportMarker {
+    id?: number | string;
+    lat?: number;
+    lng?: number;
+    latitude?: number;
+    longitude?: number;
+    category?: string;
+    kind?: string;
+    description?: string | null;
+}
+
+export interface MaintenanceDefect extends ReportMarker {
+    id: number | string;
+    hazard_report_id?: string;
+    status?: 'pending_capex_review' | 'fixed';
+    category: string;
+    severity?: 'blocker' | 'comfort';
+    estimated_cost_rm?: number | null;
+    edge_id?: number | null;
+    location_name?: string | null;
+    created_at?: string;
+}
+
 export interface RouteProperties {
     id: string;
     name: string;
@@ -8,17 +32,6 @@ export interface RouteProperties {
     senior_footfall_daily: number;
     length_meters: number;
     defects: string[];
-}
-
-export interface DefectReport {
-    id?: string;
-    latitude: number;
-    longitude: number;
-    category: 'extreme_heat' | 'broken_light' | 'uneven_pavement' | 'no_bench';
-    description?: string;
-    reported_by_proxy: boolean;
-    status: 'pending' | 'approved' | 'resolved';
-    created_at?: string;
 }
 
 export interface CapExIntervention {
