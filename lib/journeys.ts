@@ -1,0 +1,334 @@
+import { buildGraph, buildRoute, evaluateEdge, indexHazards, PROFILES, slotForHour,
+    type Graph, type PathEdge, type PathNode, type Mode, type HazardReport, type CostContext, type PathResult } from './routing.ts';
+import { DEFAULT_NEEDS, type WalkingNeeds, type WalkingAsset, type WalkingData, type PlanningInput, type JourneyPlan, type JourneyRoute } from './walking.ts';
+import { evidenceFor, isConfirmed, malaysiaHour, openingAt } from './verification.ts';
+import { metres, pointAt, projectPoint, sliceLine } from './walking-geometry.ts';
+
+const MODES: Mode[] = ['direct', 'coolest', 'safest'];
+// Suppress sub-millisecond spherical interpolation noise at exact rest boundaries.
+const TIME_EPS = .001;
+const FIELD_LABELS: Record<string, string> = { path_open: 'path condition', surface_rating: 'surface condition', has_steps: 'steps',
+    slope_pct: 'slope', crossing_type: 'crossing type', has_kerb_ramp: 'kerb ramps', shade_morning: 'morning shade',
+    shade_midday: 'midday shade', shade_afternoon: 'afternoon shade', lit_ratio: 'lighting' };
+
+export function normaliseNeeds(value: unknown): WalkingNeeds {
+    const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+    const number = (key: keyof WalkingNeeds, min: number, max: number) => typeof input[key] === 'number' && Number.isFinite(input[key])
+        ? Math.max(min, Math.min(max, input[key] as number)) : DEFAULT_NEEDS[key] as number;
+    return {
+        step_free: input.step_free === true, verified_only: input.verified_only === true,
+        avoid_uncontrolled_crossings: input.avoid_uncontrolled_crossings === true, require_rests: input.require_rests === true,
+        avoid_uneven_surfaces: input.avoid_uneven_surfaces === true,
+        rest_backrest: input.rest_backrest === true, rest_armrests: input.rest_armrests === true, rest_shelter: input.rest_shelter === true,
+        max_slope_pct: number('max_slope_pct', 0, 20), rest_interval_min: number('rest_interval_min', 1, 30),
+        rest_duration_min: number('rest_duration_min', 1, 10), budget_min: number('budget_min', 5, 120),
+        speed_mps: typeof input.speed_mps === 'number' && Number.isFinite(input.speed_mps) ? Math.max(0.3, Math.min(1.8, input.speed_mps)) : null,
+    };
+}
+
+function assetFacts(asset: WalkingAsset, data: WalkingData, at: string) {
+    const evidence = evidenceFor(data.verifications, asset.kind === 'entrance' ? 'entrance' : 'facility', asset.id, at);
+    return { evidence, values: { ...asset.properties, ...Object.fromEntries(Object.entries(evidence).map(([key, v]) => [key, v.value])) } };
+}
+
+function connectionLength(asset: WalkingAsset, facts: ReturnType<typeof assetFacts>) {
+    const straight = asset.connection_distance_m ?? 0;
+    return isConfirmed(facts.evidence, 'connection_length_m') && typeof facts.values.connection_length_m === 'number'
+        ? Math.max(straight, facts.values.connection_length_m) : straight;
+}
+
+interface Prepared {
+    graph: Graph;
+    origin: number;
+    offset: number;
+    assets: Map<string, number>;
+    originals: Map<number, PathEdge>;
+}
+function prepare(nodes: PathNode[], rawEdges: PathEdge[], data: WalkingData, input: PlanningInput): Prepared | null {
+    const projected = rawEdges.filter(e => e.pedestrian_access !== false && e.kind !== 'street').map(edge => {
+        const evidence = evidenceFor(data.verifications, edge.is_crossing ? 'crossing' : 'path', edge.id, input.departure_at);
+        const values = Object.fromEntries(Object.entries(evidence).map(([key, v]) => [key, v.value]));
+        const result = { ...edge, ...values } as PathEdge;
+        const shade = `shade_${slotForHour(malaysiaHour(input.departure_at))}`;
+        if (isConfirmed(evidence, shade)) result.shade_source = 'audited';
+        if (isConfirmed(evidence, 'lit_ratio')) result.lighting_source = 'audited';
+        if (result.covered === true) {
+            result.shade_morning = result.shade_midday = result.shade_afternoon = 1;
+            if (isConfirmed(evidence, 'covered')) result.shade_source = 'audited';
+        }
+        return result;
+    });
+    let closest: { edge: PathEdge; fraction: number; distance: number } | null = null;
+    for (const edge of projected) {
+        if (edge.geometry.length < 2) continue;
+        const projection = projectPoint(edge.geometry, [input.origin[1], input.origin[0]]);
+        if (!closest || projection.distance < closest.distance) closest = { edge, ...projection };
+    }
+    if (!closest || closest.distance > 50) return null;
+    const anchors = new Map<number, Array<{ key: string; fraction: number }>>();
+    const add = (edge: number, key: string, fraction: number) => {
+        if (!anchors.has(edge)) anchors.set(edge, []);
+        anchors.get(edge)!.push({ key, fraction: Math.round(Math.max(0, Math.min(1, fraction)) * 1e9) / 1e9 });
+    };
+    add(closest.edge.id, 'origin', closest.fraction);
+    for (const asset of data.assets) if (asset.edge_id !== null && asset.edge_fraction !== null) add(asset.edge_id, asset.id, asset.edge_fraction);
+    const virtualNodes = [...nodes], virtualEdges: PathEdge[] = [], assetNodes = new Map<string, number>();
+    let nextNode = -1, nextEdge = -1;
+    for (const edge of projected) {
+        const items = anchors.get(edge.id) ?? [];
+        const fractions = [...new Set([0, 1, ...items.map(a => a.fraction)])].sort((a, b) => a - b);
+        const ids = new Map<number, number>([[0, Number(edge.from_node)], [1, Number(edge.to_node)]]);
+        for (const f of fractions) if (f > 0 && f < 1) {
+            const p = pointAt(edge.geometry, f), id = nextNode--;
+            virtualNodes.push({ id, lat: p[1], lng: p[0] }); ids.set(f, id);
+        }
+        for (const a of items) assetNodes.set(a.key, ids.get(a.fraction)!);
+        const full = edge.geometry.slice(1).reduce((n, p, i) => n + metres(edge.geometry[i], p), 0) || edge.length_m;
+        for (let i = 1; i < fractions.length; i++) {
+            const geometry = sliceLine(edge.geometry, fractions[i - 1], fractions[i]);
+            const fraction = geometry.slice(1).reduce((n, p, j) => n + metres(geometry[j], p), 0) / full;
+            if (fraction < 1e-10) continue;
+            virtualEdges.push({ ...edge, id: nextEdge--, source_edge_id: edge.id, source_length_m: edge.length_m,
+                cost_fraction: fraction, from_node: ids.get(fractions[i - 1])!, to_node: ids.get(fractions[i])!,
+                geometry, length_m: edge.length_m * fraction });
+        }
+    }
+    return { graph: buildGraph(virtualNodes, virtualEdges), origin: assetNodes.get('origin')!, offset: closest.distance,
+        assets: assetNodes, originals: new Map(projected.map(e => [Number(e.id), e])) };
+}
+
+function missingFor(edge: PathEdge, input: PlanningInput, data: WalkingData, mode: Mode, validAt = input.departure_at) {
+    const e = evidenceFor(data.verifications, edge.is_crossing ? 'crossing' : 'path', edge.id, validAt);
+    const needed = ['path_open', 'surface_rating', 'slope_pct'];
+    if (input.needs.step_free || input.profile === 'wheelchair') needed.push('has_steps');
+    if (edge.is_crossing) {
+        needed.push('crossing_type');
+        if (input.needs.step_free || input.profile === 'wheelchair') needed.push('has_kerb_ramp');
+    }
+    const slot = slotForHour(malaysiaHour(input.departure_at));
+    if (mode === 'coolest' && slot !== 'night' && !(edge.covered && isConfirmed(e, 'covered'))) needed.push(`shade_${slot}`);
+    if (slot === 'night') needed.push('lit_ratio');
+    return needed.filter(field => !isConfirmed(e, field)).map(field => FIELD_LABELS[field] ?? field);
+}
+
+interface Label {
+    node: number; cost: number; elapsed: number; sinceRest: number; longest: number;
+    previous?: Label; edge?: PathEdge; rest?: WalkingAsset; active: boolean;
+}
+class Queue {
+    items: Label[] = [];
+    push(value: Label) {
+        const a = this.items; a.push(value); let i = a.length - 1;
+        while (i > 0) { const p = (i - 1) >> 1; if (a[p].cost <= a[i].cost) break; [a[p], a[i]] = [a[i], a[p]]; i = p; }
+    }
+    pop() {
+        const a = this.items, first = a[0], last = a.pop()!;
+        if (a.length) { a[0] = last; let i = 0;
+            for (;;) { const l = i * 2 + 1, r = l + 1; let m = i;
+                if (l < a.length && a[l].cost < a[m].cost) m = l;
+                if (r < a.length && a[r].cost < a[m].cost) m = r;
+                if (m === i) break; [a[i], a[m]] = [a[m], a[i]]; i = m;
+            }
+        }
+        return first;
+    }
+}
+
+function search(prepared: Prepared, destination: number, entrance: WalkingAsset, data: WalkingData,
+    input: PlanningInput, ctx: CostContext): { final: Label; ctx: CostContext } | { limited: true } | null {
+    const speed = ctx.speedMps!, budget = input.needs.budget_min * 60, interval = input.needs.rest_interval_min * 60;
+    const startSeconds = prepared.offset / speed;
+    const endSeconds = connectionLength(entrance, assetFacts(entrance, data, input.departure_at)) / speed;
+    const restNodes = new Map<number, WalkingAsset[]>();
+    for (const asset of data.assets) if (asset.kind === 'rest' && prepared.assets.has(asset.id)) {
+        const { evidence: e, values: v } = assetFacts(asset, data, input.departure_at);
+        const required = ['available', 'path_connection', input.profile === 'wheelchair' ? 'wheelchair_space' : 'has_seat'];
+        if (input.needs.step_free || input.profile === 'wheelchair') required.push('step_free');
+        if (input.needs.rest_backrest) required.push('backrest');
+        if (input.needs.rest_armrests) required.push('armrests');
+        if (input.needs.rest_shelter) required.push('sheltered');
+        if (!required.every(field => isConfirmed(e, field) && v[field] === true)) continue;
+        const node = prepared.assets.get(asset.id)!;
+        if (!restNodes.has(node)) restNodes.set(node, []); restNodes.get(node)!.push(asset);
+    }
+    const missing = new Map<number, string[]>();
+    const permitted = new Map<number, boolean>();
+    for (const edge of prepared.graph.edges.values()) {
+        const id = edge.source_edge_id!, original = prepared.originals.get(id)!;
+        if (permitted.has(id)) continue;
+        const facts = evidenceFor(data.verifications, original.is_crossing ? 'crossing' : 'path', id, input.departure_at);
+        const hazards = ctx.hazards.get(id) ?? [];
+        const absent = missingFor(original, input, data, ctx.mode); missing.set(id, absent);
+        const stepFree = input.needs.step_free || input.profile === 'wheelchair';
+        const blocked = facts.path_open?.value === false || (stepFree && original.has_steps)
+            || (input.needs.avoid_uneven_surfaces && original.surface_rating != null && original.surface_rating > 1)
+            || (original.slope_pct != null && Math.abs(original.slope_pct) > Math.min(input.needs.max_slope_pct, input.profile === 'wheelchair' ? 8.33 : 100))
+            || (input.needs.avoid_uncontrolled_crossings && original.is_crossing && original.crossing_type !== 'signalised' && original.crossing_type !== 'zebra')
+            || (input.needs.verified_only && absent.length > 0)
+            || hazards.some(h => h.kind === 'blocked' || (stepFree && h.kind === 'no_ramp') || (input.profile === 'wheelchair' && h.kind === 'broken_surface'));
+        permitted.set(id, !blocked);
+    }
+    const queue = new Queue(), fronts = new Map<number, Label[]>();
+    const offer = (label: Label) => {
+        if (label.elapsed + endSeconds > budget + TIME_EPS || (input.needs.require_rests && label.sinceRest > interval + TIME_EPS)) return;
+        const old = (fronts.get(label.node) ?? []).filter(l => l.active);
+        if (old.some(l => l.cost <= label.cost + 1e-7 && (!input.needs.require_rests || l.sinceRest <= label.sinceRest + 1e-7) && l.elapsed <= label.elapsed + 1e-7)) return;
+        for (const l of old) if (label.cost <= l.cost && (!input.needs.require_rests || label.sinceRest <= l.sinceRest) && label.elapsed <= l.elapsed) l.active = false;
+        fronts.set(label.node, [...old.filter(l => l.active), label]); queue.push(label);
+    };
+    offer({ node: prepared.origin, cost: startSeconds, elapsed: startSeconds, sinceRest: startSeconds, longest: startSeconds, active: true });
+    const cache = new Map<number, ReturnType<typeof evaluateEdge>>();
+    let examined = 0;
+    while (queue.items.length) {
+        const label = queue.pop(); if (!label.active) continue;
+        if (++examined > 100000) return { limited: true };
+        if (label.node === destination && (!input.needs.require_rests || label.sinceRest + endSeconds <= interval + TIME_EPS)) return { final: label, ctx };
+        for (const rest of input.needs.require_rests ? restNodes.get(label.node) ?? [] : []) {
+            const atAnchor = new Date(Date.parse(input.departure_at) + label.elapsed * 1000).toISOString();
+            const detour = connectionLength(rest, assetFacts(rest, data, atAnchor)) / speed;
+            const arrivalAtRest = new Date(Date.parse(input.departure_at) + (label.elapsed + detour) * 1000).toISOString();
+            const facts = assetFacts(rest, data, arrivalAtRest), { values, evidence } = facts;
+            const required = ['available', 'path_connection', input.profile === 'wheelchair' ? 'wheelchair_space' : 'has_seat',
+                ...(input.needs.step_free || input.profile === 'wheelchair' ? ['step_free'] : []),
+                ...(input.needs.rest_backrest ? ['backrest'] : []), ...(input.needs.rest_armrests ? ['armrests'] : []), ...(input.needs.rest_shelter ? ['sheltered'] : [])];
+            if (!required.every(f => isConfirmed(evidence, f) && values[f] === true) || openingAt(values.opening_hours, arrivalAtRest) === false) continue;
+            if (label.sinceRest > TIME_EPS && (!input.needs.require_rests || label.sinceRest + detour <= interval + TIME_EPS)) {
+                const seconds = detour * 2 + input.needs.rest_duration_min * 60;
+                offer({ node: label.node, cost: label.cost + seconds, elapsed: label.elapsed + seconds, sinceRest: detour,
+                    longest: Math.max(label.longest, label.sinceRest + detour), previous: label, rest, active: true });
+            }
+        }
+        for (const { edge, to } of prepared.graph.adj.get(label.node) ?? []) {
+            if (!permitted.get(edge.source_edge_id!)) continue;
+            let evaluation = cache.get(edge.id);
+            if (!evaluation) { evaluation = evaluateEdge(edge, ctx); cache.set(edge.id, evaluation); }
+            if (evaluation.hard.length) continue;
+            const seconds = evaluation.walk_s + evaluation.wait_s;
+            offer({ node: to, cost: label.cost + evaluation.cost, elapsed: label.elapsed + seconds,
+                sinceRest: label.sinceRest + seconds, longest: Math.max(label.longest, label.sinceRest + seconds),
+                previous: label, edge, active: true });
+        }
+    }
+    return null;
+}
+
+function summarise(prepared: Prepared, final: Label, entrance: WalkingAsset, input: PlanningInput,
+    data: WalkingData, ctx: CostContext): JourneyRoute {
+    const steps: Label[] = []; for (let l: Label | undefined = final; l?.previous; l = l.previous) steps.push(l); steps.reverse();
+    const path: PathResult = { nodes: [prepared.origin], edges: [] };
+    for (const step of steps) if (step.edge) { path.nodes.push(step.node); path.edges.push(step.edge); }
+    const result = buildRoute(prepared.graph, path, ctx), speed = ctx.speedMps!;
+    const rests = steps.filter(l => l.rest).map(l => l.rest!);
+    const restMetres = rests.reduce((sum, a) => sum + connectionLength(a, assetFacts(a, data, input.departure_at)) * 2, 0);
+    const endMetres = connectionLength(entrance, assetFacts(entrance, data, input.departure_at));
+    const connectors = prepared.offset + endMetres + restMetres;
+    const totalSeconds = final.elapsed + endMetres / speed;
+    const arrival = new Date(Date.parse(input.departure_at) + totalSeconds * 1000).toISOString();
+    const originalIDs = path.edges.map(e => e.source_edge_id!).filter((id, i, all) => i === 0 || id !== all[i - 1]);
+    const evidence = [...new Set(originalIDs)].map(id => ({ edge_id: id, name: prepared.originals.get(id)?.name || `Footpath ${id}`,
+        missing: missingFor(prepared.originals.get(id)!, input, data, ctx.mode, arrival) }));
+    const unchecked = evidence.filter(e => e.missing.length > 0);
+    const unverifiedCrossings = evidence.filter(e => prepared.originals.get(e.edge_id)?.is_crossing && e.missing.length > 0).length;
+    const facts = assetFacts(entrance, data, arrival);
+    const entranceMissing = ['available', 'path_connection', 'opening_hours', ...(input.needs.step_free || input.profile === 'wheelchair' ? ['step_free'] : [])]
+        .filter(f => !isConfirmed(facts.evidence, f));
+    const explanations: string[] = [];
+    if (unchecked.length) explanations.push(`${unchecked.length} path segment${unchecked.length === 1 ? '' : 's'} need current checks.`);
+    if (unverifiedCrossings) explanations.push(`${unverifiedCrossings} crossing${unverifiedCrossings === 1 ? '' : 's'} not fully checked.`);
+    if (entranceMissing.length) explanations.push(`Access point checks needed: ${entranceMissing.map(f => f.replaceAll('_', ' ')).join(', ')}.`);
+    if (openingAt(facts.values.opening_hours, arrival) === null) explanations.push('Opening hours at arrival are not confirmed.');
+    if (prepared.offset > 3) explanations.push('The connection from your start to the mapped path is approximate.');
+    if (input.needs.require_rests) explanations.push(`Verified rests keep continuous walking within ${input.needs.rest_interval_min} minute${input.needs.rest_interval_min === 1 ? '' : 's'}.`);
+    const unknownComfort = result.quality.assumed > 0 || result.quality.modelled > 0;
+    if (unknownComfort) explanations.push('Shade or lighting includes mapped/modelled assumptions.');
+    const restHoursUnknown = rests.some(a => {
+        const f = assetFacts(a, data, arrival);
+        return !isConfirmed(f.evidence, 'opening_hours') || openingAt(f.values.opening_hours, arrival) === null;
+    });
+    if (restHoursUnknown) explanations.push('Hours for a planned rest facility need confirmation.');
+    const green = !unchecked.length && !entranceMissing.length && !restHoursUnknown && prepared.offset <= 3
+        && openingAt(facts.values.opening_hours, arrival) === true;
+    const coords: [number, number][] = [[...input.origin]];
+    let node = prepared.origin;
+    for (const step of steps) {
+        if (step.edge) {
+            const line = step.edge.from_node === node ? step.edge.geometry : [...step.edge.geometry].reverse();
+            coords.push(...line.map(([lng, lat]) => [lat, lng] as [number, number])); node = step.node;
+        } else if (step.rest) {
+            const p = prepared.graph.nodes.get(node)!;
+            coords.push([step.rest.lat, step.rest.lng], [p.lat, p.lng]);
+        }
+    }
+    coords.push([entrance.lat, entrance.lng]);
+    const exposed = path.edges.reduce((n, edge) => n + edge.length_m * (1 - evaluateEdge(edge, ctx).shade), 0);
+    const unsheltered = path.edges.reduce((n, e) => n + (e.covered === true ? 0 : e.length_m), 0);
+    return { ...result, coordinates: coords, edge_ids: originalIDs, destination: input.destination, entrance,
+        length_m: result.length_m + connectors, walk_min: result.walk_min + connectors / speed / 60,
+        total_min: totalSeconds / 60, rest_min: rests.length * input.needs.rest_duration_min, rest_stops: rests,
+        verified_rest_stops: rests.length, longest_without_rest_min: Math.max(final.longest, final.sinceRest + endMetres / speed) / 60,
+        uncovered_m: ctx.slot === 'night' ? 0 : exposed + connectors,
+        unsheltered_m: unsheltered + connectors, unverified_crossings: unverifiedCrossings, unchecked_segments: unchecked.length,
+        evidence_coverage: evidence.length ? (evidence.length - unchecked.length) / evidence.length : 0,
+        suitability: green ? 'green' : 'yellow', explanations, evidence,
+        departure_at: input.departure_at, arrival_at: new Date(Date.parse(input.departure_at) + totalSeconds * 1000).toISOString() };
+}
+
+export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingData,
+    request: PlanningInput, hazards: HazardReport[] = [], feelsLike?: number | null, modes: Mode[] = MODES): JourneyPlan {
+    const input = { ...request, needs: normaliseNeeds(request.needs) };
+    if (!Number.isFinite(Date.parse(input.departure_at))) return { routes: {}, recommended: null, reasons: ['Choose a valid departure time.'] };
+    const prepared = prepare(nodes, edges, data, input);
+    if (!prepared) return { routes: {}, recommended: null, reasons: ['Your start is more than 50 metres from a mapped pedestrian path.'] };
+    const entrances = input.destination.kind === 'destination' || input.destination.kind === 'transit'
+        ? data.assets.filter(a => a.kind === 'entrance' && a.parent_id === input.destination.id) : [input.destination];
+    const candidates = entrances.filter(a => (!input.entrance_id || a.id === input.entrance_id) && prepared.assets.has(a.id));
+    if (!candidates.length) return { routes: {}, recommended: null, reasons: ['This place has no mapped access point connected to the walking network.'] };
+    const routes: JourneyPlan['routes'] = {};
+    let searchLimited = false;
+    const speed = input.needs.speed_mps ?? PROFILES[input.profile].speed_mps;
+    const slot = slotForHour(malaysiaHour(input.departure_at));
+    for (const mode of modes) {
+        let bestCost = Infinity;
+        for (const entrance of candidates) {
+            const { values, evidence } = assetFacts(entrance, data, input.departure_at);
+            if (values.available === false || values.path_connection === false) continue;
+            const stepFree = input.needs.step_free || input.profile === 'wheelchair';
+            if (stepFree && values.step_free === false) continue;
+            if (input.needs.verified_only && !['available', 'path_connection', 'opening_hours', ...(stepFree ? ['step_free'] : [])]
+                .every(f => isConfirmed(evidence, f))) continue;
+            const ctx: CostContext = { mode, profile: input.profile, slot, speedMps: speed,
+                strictUnknown: input.needs.verified_only, hazards: indexHazards(hazards), heatMultiplier: feelsLike != null && feelsLike >= 32 ? 1.5 : 1 };
+            const found = search(prepared, prepared.assets.get(entrance.id)!, entrance, data, input, ctx);
+            if (!found) continue;
+            if ('limited' in found) { searchLimited = true; continue; }
+            const route = summarise(prepared, found.final, entrance, input, data, ctx);
+            if (input.needs.verified_only && route.suitability !== 'green') continue;
+            // An entrance's opening window must also cover actual arrival.
+            if (openingAt(values.opening_hours, route.arrival_at) === false) continue;
+            const rank = found.final.cost + (route.suitability === 'green' ? 0 : 100000);
+            if (rank < bestCost) { routes[mode] = route; bestCost = rank; }
+        }
+    }
+    const available = MODES.filter(m => routes[m] && !(slot === 'night' && m === 'coolest'));
+    const recommended = available.sort((a, b) => {
+        const ra = routes[a]!, rb = routes[b]!;
+        const score = (r: JourneyRoute) => (r.suitability === 'green' ? 0 : 10000) + r.unchecked_segments * 10
+            + r.total_min + (slot === 'night' ? r.dark_m / 10 : r.uncovered_m / (feelsLike != null && feelsLike >= 32 ? 20 : 50));
+        return score(ra) - score(rb);
+    })[0] ?? null;
+    const reasons = available.length ? [] : searchLimited ? ['The route search could not complete for these settings. No recommendation is available; try a smaller trip budget.'] : [
+        input.needs.require_rests ? `No connected route meets your ${input.needs.rest_interval_min}-minute interval with verified rest facilities.`
+            : 'No connected route meets the selected needs and walking budget, or its access points are closed.',
+        ...(input.needs.verified_only ? ['Current verification records are required for the path, crossings and access point.'] : []),
+    ];
+    return { routes, recommended, reasons };
+}
+
+export function reachablePlaces(nodes: PathNode[], edges: PathEdge[], data: WalkingData,
+    request: Omit<PlanningInput, 'destination'>, hazards: HazardReport[] = []) {
+    return data.assets.filter(a => ['destination', 'transit', 'toilet', 'water'].includes(a.kind)).map(destination => {
+        const plan = planJourney(nodes, edges, data, { ...request, destination }, hazards, null, ['direct']);
+        const route = plan.recommended ? plan.routes[plan.recommended]! : null;
+        return { destination, route, reasons: plan.reasons };
+    }).sort((a, b) => (a.route?.total_min ?? Infinity) - (b.route?.total_min ?? Infinity));
+}

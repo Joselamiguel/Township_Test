@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
@@ -10,14 +10,26 @@ import {
     AlertTriangle, Phone, MessageCircle, Copy, Volume2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { loadGraph as fetchGraph, loadHazards, loadReports, submitReport, loadWalkingData } from '@/lib/api';
+import type { ReportMarker } from '@/lib/types';
+import { useClientReady } from '@/lib/use-client-ready';
+import { readWalkParameters } from '@/lib/walk-parameters';
+import { DEFAULT_ORIGIN, DESTINATIONS, ORIGIN_LABEL } from '@/lib/precinct';
+import { normaliseNeeds, planJourney, reachablePlaces } from '@/lib/journeys';
+import { malaysiaHour } from '@/lib/verification';
+import { forecastAt, type WalkingWeather } from '@/lib/comfort';
+import type { WalkingData, WalkingAsset } from '@/lib/walking';
+import RouteQualityBar from '@/components/walking/RouteQualityBar';
+import WalkingRequirements from '@/components/walking/WalkingRequirements';
+import DepartureControl from '@/components/walking/DepartureControl';
+import RouteDetails from '@/components/walking/RouteDetails';
+import PlaceDiscovery from '@/components/walking/PlaceDiscovery';
 import {
-    buildGraph, planRoutes, nearestEdge, slotForHour, PROFILES,
+    buildGraph, nearestEdge, slotForHour, PROFILES,
     type Profile, type Mode, type TimeSlot, type PathNode, type PathEdge,
     type HazardReport, type HazardKind, type RouteResult,
 } from '@/lib/routing';
 
-import { estimateDefectCost } from '@/lib/scoring';
 
 const InteractiveMap = dynamic(() => import('@/components/map/InteractiveMap'), { ssr: false });
 
@@ -25,21 +37,7 @@ const InteractiveMap = dynamic(() => import('@/components/map/InteractiveMap'), 
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
 
-const DEFAULT_ORIGIN: [number, number] = [3.1223, 101.6580];
 const EMERGENCY_NUMBER = '999'; // Malaysia. Remove the "Call for help" button if you don't want it.
-
-const DESTINATIONS = [
-    {
-        id: 'lrt_universiti',
-        name: 'LRT Universiti / KL Gateway Bridge',
-        coords: [3.1143, 101.6613] as [number, number],
-    },
-    {
-        id: 'kl_gateway_mall',
-        name: 'KL Gateway Mall Promenade',
-        coords: [3.1138, 101.6626] as [number, number],
-    }
-];
 
 const MODES: Mode[] = ['direct', 'coolest', 'safest'];
 
@@ -59,7 +57,6 @@ const HAZARD_OPTIONS: {
     { kind: 'no_shade', label: 'No shade here', hint: 'Too hot, no cover from the sun', Icon: Sun, capexCat: 'Shade Infrastructure', severity: 'comfort' },
 ];
 
-type Weather = { air_temp_c?: number; feels_like_c?: number; apparent_temp_c?: number; uv_index?: number; timestamp?: string };
 type Step = 'where' | 'route' | 'walking';
 type TextScale = 'normal' | 'large' | 'xlarge';
 type Prefs = { scale: TextScale; highContrast: boolean; reduceMotion: boolean; vibrate: boolean; speak: boolean };
@@ -142,45 +139,6 @@ const STYLES = `
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-function parseGeometry(g: unknown): [number, number][] {
-    if (!g) return [];
-    try {
-        return typeof g === 'string' ? JSON.parse(g) : (g as [number, number][]);
-    } catch {
-        console.warn("Invalid geometry format skipped:", g);
-        return [];
-    }
-}
-
-async function fetchAllRows(table: string) {
-    let allData: any[] = [];
-    let from = 0;
-    const limit = 1000;
-    let hasMore = true;
-
-    while (hasMore) {
-        const { data, error } = await supabase
-            .from(table)
-            .select('*')
-            .range(from, from + limit - 1);
-
-        if (error) {
-            console.error(`Error fetching ${table}:`, error);
-            break;
-        }
-
-        if (data && data.length > 0) {
-            allData.push(...data);
-            from += limit;
-        }
-
-        if (!data || data.length < limit) {
-            hasMore = false;
-        }
-    }
-    return allData;
-}
-
 async function copyText(text: string): Promise<boolean> {
     try {
         if (navigator.clipboard?.writeText) {
@@ -215,7 +173,7 @@ function getFreshPosition(fallback: [number, number]): Promise<[number, number]>
     });
 }
 
-const minutesOf = (r: RouteResult) => Math.max(1, Math.round(r.walk_min));
+const minutesOf = (r: RouteResult & { total_min?: number }) => Math.max(1, Math.ceil(r.total_min ?? r.walk_min));
 
 function reasonFor(m: Mode, r: RouteResult, night: boolean): string {
     const sun = Math.round(r.sun_exposed_min * 10) / 10;
@@ -266,26 +224,38 @@ function SettingSwitch({ label, hint, checked, onChange }: {
 
 function ResidentPageContent() {
     const searchParams = useSearchParams();
+    const initialWalk = readWalkParameters(searchParams, DESTINATIONS.map((d) => d.id), DEFAULT_ORIGIN);
 
-    const [userCoords, setUserCoords] = useState<[number, number]>(DEFAULT_ORIGIN);
+    const [userCoords, setUserCoords] = useState<[number, number]>(initialWalk.origin);
     const [usingGPS, setUsingGPS] = useState(false);
     const [geoBusy, setGeoBusy] = useState(false);
     const [geoMsg, setGeoMsg] = useState<string | null>(null);
-    const [destId, setDestId] = useState<string>('lrt_universiti');
-    const [profile, setProfile] = useState<Profile>('senior');
+    const [destId, setDestId] = useState<string>(searchParams.get('destId') || initialWalk.destination);
+    const [profile, setProfile] = useState<Profile>(initialWalk.profile);
 
-    const [hour, setHour] = useState<number | null>(null);
-    const [slotMode] = useState<'auto' | 'day' | 'night'>('auto');
+    const [initialTime] = useState(() => new Date().toISOString());
+    const [departure, setDeparture] = useState<string | null>(() => {
+        const raw = searchParams.get('departure');
+        return raw && Number.isFinite(Date.parse(raw)) && Date.parse(raw) >= Date.now() - 900000 ? raw : null;
+    });
+    const [entranceId, setEntranceId] = useState(searchParams.get('entrance') || '');
+    const [walkingData, setWalkingData] = useState<WalkingData | null>(null);
+    const [needs, setNeeds] = useState(() => {
+        try { return normaliseNeeds(JSON.parse(searchParams.get('needs') || localStorage.getItem('townshipgo:walking-needs:v1') || '{}')); }
+        catch { return normaliseNeeds({}); }
+    });
 
     const [nodes, setNodes] = useState<PathNode[]>([]);
     const [edges, setEdges] = useState<PathEdge[]>([]);
     const [hazards, setHazards] = useState<HazardReport[]>([]);
-    const [reports, setReports] = useState<any[]>([]);
+    const [reports, setReports] = useState<ReportMarker[]>([]);
     const [loadingDb, setLoadingDb] = useState(true);
+    const [dataError, setDataError] = useState(false);
+    const [reloadVersion, setReloadVersion] = useState(0);
 
-    const [weather, setWeather] = useState<Weather | null>(null);
-    const [activeMode, setActiveMode] = useState<Mode>('coolest');
-    const [step, setStep] = useState<Step>('where');
+    const [weather, setWeather] = useState<WalkingWeather | null>(null);
+    const [chosenMode, setChosenMode] = useState<Mode | null>(initialWalk.mode);
+    const [step, setStep] = useState<Step>(initialWalk.fromLink ? 'route' : 'where');
     const isNavigating = step === 'walking';
 
     // Hazard reporting
@@ -296,38 +266,32 @@ function ResidentPageContent() {
     const [reportMsg, setReportMsg] = useState<string | null>(null);
 
     // Settings, sharing, confirmation
-    const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
-    const [prefsLoaded, setPrefsLoaded] = useState(false);
+    const [prefs, setPrefs] = useState<Prefs>(() => {
+        let stored: Partial<Prefs> | null = null;
+        try {
+            const raw = localStorage.getItem(PREFS_KEY);
+            if (raw) stored = JSON.parse(raw);
+        } catch { /* ignore inaccessible storage */ }
+        const systemReduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+        return { ...DEFAULT_PREFS, reduceMotion: systemReduce, ...(stored ?? {}) };
+    });
     const [showSettings, setShowSettings] = useState(false);
     const [showShare, setShowShare] = useState(false);
     const [shareUrl, setShareUrl] = useState('');
     const [copied, setCopied] = useState(false);
     const [shareNote, setShareNote] = useState<string | null>(null);
     const [confirmEnd, setConfirmEnd] = useState(false);
-    const [canShare, setCanShare] = useState(false);
-    const [canSpeak, setCanSpeak] = useState(false);
-
-    // A mode that came from a shared link. Cleared as soon as the person changes something themselves.
-    const sharedModeRef = useRef<Mode | null>(null);
+    const canShare = typeof navigator.share === 'function';
+    const canSpeak = 'speechSynthesis' in window;
 
     /* ---------- Preferences ---------- */
     useEffect(() => {
-        let stored: Partial<Prefs> | null = null;
-        try {
-            const raw = localStorage.getItem(PREFS_KEY);
-            if (raw) stored = JSON.parse(raw);
-        } catch { /* ignore */ }
-        const systemReduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-        setPrefs({ ...DEFAULT_PREFS, reduceMotion: systemReduce, ...(stored ?? {}) });
-        setPrefsLoaded(true);
-        setCanShare(typeof navigator.share === 'function');
-        setCanSpeak('speechSynthesis' in window);
-    }, []);
+        try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
+    }, [prefs]);
 
     useEffect(() => {
-        if (!prefsLoaded) return;
-        try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
-    }, [prefs, prefsLoaded]);
+        try { localStorage.setItem('townshipgo:walking-needs:v1', JSON.stringify(needs)); } catch { /* storage may be unavailable */ }
+    }, [needs]);
 
     // Text size scales the whole page because everything is sized in rem
     useEffect(() => {
@@ -354,113 +318,65 @@ function ResidentPageContent() {
         window.speechSynthesis.speak(u);
     }
 
-    /* ---------- Hydrate from a shared link ---------- */
-    useEffect(() => {
-        if (!searchParams) return;
-        let fromLink = false;
-
-        const lat = parseFloat(searchParams.get('startLat') ?? '');
-        const lng = parseFloat(searchParams.get('startLng') ?? '');
-        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-            setUserCoords([lat, lng]);
-            fromLink = true;
-        }
-
-        const urlDest = searchParams.get('destId');
-        if (urlDest && DESTINATIONS.some((d) => d.id === urlDest)) {
-            setDestId(urlDest);
-            fromLink = true;
-        }
-
-        const urlProfile = searchParams.get('profile');
-        if (urlProfile && (Object.keys(PROFILES) as string[]).includes(urlProfile)) {
-            setProfile(urlProfile as Profile);
-        }
-
-        const urlMode = searchParams.get('mode');
-        if (urlMode && (MODES as string[]).includes(urlMode)) {
-            sharedModeRef.current = urlMode as Mode;
-            setActiveMode(urlMode as Mode);
-        }
-
-        if (fromLink) setStep('route');
-    }, [searchParams]);
-
     /* ---------- Data ---------- */
     useEffect(() => {
-        setHour(new Date().getHours());
-        loadWeather();
-        loadGraph();
-    }, []);
-
-    async function loadWeather() {
-        try {
-            const res = await fetch('/api/weather');
-            if (!res.ok) throw new Error(String(res.status));
-            setWeather(await res.json());
-        } catch {
-            setWeather(null);
+        async function loadWeather() {
+            try {
+                const res = await fetch('/api/weather');
+                if (!res.ok) throw new Error(String(res.status));
+                setWeather(await res.json());
+            } catch {
+                setWeather(null);
+            }
         }
-    }
 
-    async function loadGraph() {
-        setLoadingDb(true);
-        try {
-            const [nData, eData, hRes, dRes] = await Promise.all([
-                fetchAllRows('path_nodes'),
-                fetchAllRows('path_edges'),
-                supabase.from('hazard_reports').select('id, edge_id, kind, status').neq('status', 'fixed'),
-                supabase.from('defect_reports').select('*'),
-            ]);
-
-            const nodesArray = Array.isArray(nData) ? nData : (nData as any).data || [];
-            const edgesArray = Array.isArray(eData) ? eData : (eData as any).data || [];
-
-            setNodes(nodesArray as PathNode[]);
-
-            const parsedEdges = edgesArray.map((row: any) => ({
-                ...row,
-                geometry: parseGeometry(row.geometry)
-            })).filter((row: any) => row.geometry && row.geometry.length > 0);
-
-            setEdges(parsedEdges as PathEdge[]);
-            setHazards((hRes.data ?? []) as HazardReport[]);
-            setReports(dRes.data ?? []);
-        } catch (error) {
-            console.error("Data processing error:", error);
-        } finally {
-            setLoadingDb(false);
+        async function loadGraph() {
+            try {
+                const [graphData, hazardData, reportData, walking] = await Promise.all([
+                    fetchGraph(), loadHazards(), loadReports('all'), loadWalkingData(),
+                ]);
+                setNodes(graphData.nodes);
+                setWalkingData(walking);
+                setEdges(graphData.edges);
+                setHazards(hazardData.hazards);
+                setReports(reportData.reports);
+                setDataError(false);
+            } catch (error) {
+                console.error("Could not load pedestrian data:", error);
+                setDataError(true);
+            } finally {
+                setLoadingDb(false);
+            }
         }
-    }
+
+        void loadWeather();
+        void loadGraph();
+    }, [reloadVersion]);
 
     /* ---------- Routing ---------- */
-    const autoSlot = slotForHour(hour ?? 12);
-    const slot: TimeSlot =
-        slotMode === 'night' ? 'night' : slotMode === 'day' ? (autoSlot === 'night' ? 'midday' : autoSlot) : autoSlot;
+    const planningTime = departure ?? walkingData?.as_of ?? initialTime;
+    const slot: TimeSlot = slotForHour(malaysiaHour(planningTime));
     const isNight = slot === 'night';
-
     const graph = useMemo(() => buildGraph(nodes, edges), [nodes, edges]);
-    const currentDest = DESTINATIONS.find((d) => d.id === destId) || DESTINATIONS[0];
-
+    const places = useMemo(() => walkingData?.assets.filter(a => ['destination', 'transit', 'toilet', 'water'].includes(a.kind)) ?? [], [walkingData]);
+    const destination = places.find(a => a.id === destId || a.external_id === destId) ?? places[0] ?? null;
+    const currentDest = destination ? { id: destination.external_id || destination.id, name: destination.name, coords: [destination.lat, destination.lng] as [number, number] } : DESTINATIONS[0];
+    const entrances = walkingData?.assets.filter(a => a.kind === 'entrance' && a.parent_id === destination?.id) ?? [];
+    const forecast = forecastAt(weather, planningTime);
     const plan = useMemo(() => {
-        if (graph.nodes.size === 0) return null;
-        return planRoutes(graph, userCoords, currentDest.coords, profile, slot, hazards);
-    }, [graph, userCoords, currentDest.coords, profile, slot, hazards]);
+        if (!walkingData || !destination || !nodes.length) return null;
+        return planJourney(nodes, edges, walkingData, { origin: userCoords, destination, entrance_id: entranceId || undefined,
+            profile, needs, departure_at: planningTime }, hazards, forecast?.feels_like_c);
+    }, [nodes, edges, walkingData, destination, entranceId, userCoords, profile, needs, planningTime, hazards, forecast?.feels_like_c]);
+    const discovery = useMemo(() => !walkingData || !nodes.length ? [] : reachablePlaces(nodes, edges, walkingData,
+        { origin: userCoords, profile, needs, departure_at: planningTime }, hazards), [nodes, edges, walkingData, userCoords, profile, needs, planningTime, hazards]);
+    const recommended: Mode = plan?.recommended ?? (isNight ? 'safest' : 'coolest');
 
-    const recommended: Mode = isNight ? 'safest' : 'coolest';
     const visibleModes: Mode[] = isNight ? ['direct', 'safest'] : ['direct', 'coolest', 'safest'];
 
-    // Pick the sensible default, unless a shared link asked for something specific
-    useEffect(() => {
-        const shared = sharedModeRef.current;
-        if (shared && !(isNight && shared === 'coolest')) {
-            setActiveMode(shared);
-            return;
-        }
-        setActiveMode(recommended);
-    }, [isNight, destId, profile, recommended]);
+    const activeMode = chosenMode && !(isNight && chosenMode === 'coolest') ? chosenMode : recommended;
 
-    const activeRoute: RouteResult | undefined =
+    const activeRoute =
         plan?.routes[activeMode] ?? plan?.routes.direct ?? Object.values(plan?.routes ?? {})[0];
     const shownMode: Mode = (activeRoute?.mode as Mode | undefined) ?? activeMode;
 
@@ -485,25 +401,25 @@ function ResidentPageContent() {
 
     /* ---------- Things the person does ---------- */
     function chooseDest(id: string) {
-        sharedModeRef.current = null;
+        setChosenMode(null);
         setDestId(id);
+        setEntranceId('');
         buzz();
     }
     function chooseProfile(p: Profile) {
-        sharedModeRef.current = null;
+        setChosenMode(null);
         setProfile(p);
         buzz();
     }
     function chooseMode(m: Mode) {
-        sharedModeRef.current = null;
-        setActiveMode(m);
+        setChosenMode(m);
         buzz();
     }
 
     function handleGetLocation() {
         setGeoMsg(null);
         if (!('geolocation' in navigator)) {
-            setGeoMsg('This device cannot share its location. Your walk will start from PASUM / Dataran Sains.');
+            setGeoMsg(`This device cannot share its location. Your walk will start from the ${ORIGIN_LABEL}.`);
             return;
         }
         setGeoBusy(true);
@@ -515,7 +431,7 @@ function ResidentPageContent() {
             },
             () => {
                 setGeoBusy(false);
-                setGeoMsg('We could not find your location. Check that location is turned on, or start from PASUM / Dataran Sains.');
+                setGeoMsg(`We could not find your location. Check that location is turned on, or use the ${ORIGIN_LABEL}.`);
             },
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
         );
@@ -546,7 +462,9 @@ function ResidentPageContent() {
         if (!activeRoute) return;
         speak(
             `To ${currentDest.name}. ${MODE_LABEL[shownMode]} route. About ${minutesOf(activeRoute)} minutes, ` +
-            `${Math.round(activeRoute.length_m)} metres. ${reasonFor(shownMode, activeRoute, isNight)}.`,
+            `${Math.round(activeRoute.length_m)} metres. ${activeRoute.verified_rest_stops} verified rest stops. ` +
+            `${Math.round(activeRoute.uncovered_m)} metres uncovered, estimated. ${activeRoute.unverified_crossings} crossings need checks. ` +
+            `Arrival at ${activeRoute.entrance.name}. ${activeRoute.suitability === 'green' ? 'This route meets your needs and current checks.' : 'This route needs confirmation.'}`,
             true,
         );
     }
@@ -564,6 +482,9 @@ function ResidentPageContent() {
             destId,
             mode: shownMode,
             profile,
+            needs: JSON.stringify(needs),
+            departure: planningTime,
+            ...(entranceId ? { entrance: entranceId } : {}),
         });
         setShareUrl(`${window.location.origin}${window.location.pathname}?${params.toString()}`);
         setCopied(false);
@@ -607,55 +528,12 @@ function ResidentPageContent() {
             const matchedEdge = edges.find((e) => e.id === near.edge_id);
             const edgeName = matchedEdge?.name || `Walkway Edge #${near.edge_id}`;
 
-            const selectedOpt = HAZARD_OPTIONS.find((h) => h.kind === selectedKind);
-            const severity = selectedOpt?.severity ?? 'comfort';
-            const estimatedCost = estimateDefectCost(selectedKind, matchedEdge?.length_m || 20);
-            const category = selectedOpt?.capexCat ?? 'General Maintenance';
-            const description = reportNotes || `${selectedOpt?.label} reported on ${edgeName}`;
-
-            // 1. Live hazard table (used by the router)
-            const { data: hData, error: hErr } = await supabase
-                .from('hazard_reports')
-                .insert({
-                    edge_id: near.edge_id,
-                    lat: here[0],
-                    lng: here[1],
-                    kind: selectedKind,
-                    status: 'open',
-                    reporter_role: 'resident',
-                })
-                .select('id, edge_id, kind, status')
-                .single();
-
-            if (hErr) throw hErr;
-
-            // 2. CAPEX maintenance queue (admin dashboard)
-            const { error: dErr } = await supabase
-                .from('defect_reports')
-                .insert({
-                    edge_id: near.edge_id,
-                    lat: here[0],
-                    lng: here[1],
-                    latitude: here[0],
-                    longitude: here[1],
-                    location_name: edgeName,
-                    category,
-                    severity,
-                    estimated_cost_rm: estimatedCost,
-                    description,
-                    status: 'pending_capex_review',
-                });
-
-            if (dErr) {
-                console.error('Error inserting into defect_reports:', dErr.message, dErr.details, dErr.hint);
-            }
-
-            if (hData) setHazards((prev) => [...prev, hData as HazardReport]);
-            // Show the new problem on the map straight away
-            setReports((prev) => [
-                ...prev,
-                { id: `local-${Date.now()}`, lat: here[0], lng: here[1], category, kind: selectedKind, description },
-            ]);
+            const { hazard, report } = await submitReport({
+                edge_id: near.edge_id,
+                lat: here[0], lng: here[1], kind: selectedKind, description: reportNotes,
+            });
+            setHazards((prev) => [...prev, hazard]);
+            setReports((prev) => [...prev, report]);
 
             setReportMsg(`Thank you. Your report was sent for ${edgeName}.`);
             buzz(120);
@@ -693,12 +571,12 @@ function ResidentPageContent() {
     /* ---------- Keep the screen on while walking ---------- */
     useEffect(() => {
         if (step !== 'walking') return;
-        let lock: any = null;
+        let lock: WakeLockSentinel | null = null;
         let cancelled = false;
 
         const acquire = async () => {
             try {
-                const wl = (navigator as any).wakeLock;
+                const wl = navigator.wakeLock;
                 if (!wl) return;
                 lock = await wl.request('screen');
                 if (cancelled) lock.release?.();
@@ -716,23 +594,16 @@ function ResidentPageContent() {
     }, [step]);
 
     /* ---------- Derived display values ---------- */
-    // /api/weather returns feels_like_c. The route's built-in fallback stamps a full ISO time ending in "Z",
-    // while Open-Meteo's real readings have no "Z", so that is how we tell an estimate from a live reading.
-    const temp = weather?.feels_like_c ?? weather?.apparent_temp_c ?? weather?.air_temp_c;
-    const isEstimate = typeof weather?.timestamp === 'string' && weather.timestamp.endsWith('Z');
+    const temp = forecast?.feels_like_c;
     const isDefaultOrigin = userCoords[0] === DEFAULT_ORIGIN[0] && userCoords[1] === DEFAULT_ORIGIN[1];
-    const originLabel = usingGPS ? 'Your current location' : isDefaultOrigin ? 'PASUM / Dataran Sains' : 'Start point from a shared link';
-
-    const banner = (() => {
-        if (isNight) return { Icon: Moon, text: 'It is dark out. We suggest the best-lit route.' };
-        if (temp == null) return { Icon: Sun, text: 'We suggest the shadiest route.' };
-        const t = Math.round(temp);
-        const feels = isEstimate ? `about ${t}°C (estimated)` : `feels like ${t}°C`;
-        const strongSun = !isEstimate && weather?.uv_index != null && weather.uv_index >= 8 ? ' The sun is very strong.' : '';
-        if (t >= 32) return { Icon: Thermometer, text: `Hot today, ${feels}. We suggest the shadiest route.${strongSun}` };
-        if (t >= 28) return { Icon: Thermometer, text: `Warm today, ${feels}. We suggest the shadiest route.${strongSun}` };
-        return { Icon: Sun, text: `Comfortable today, ${feels}. We suggest the shadiest route.${strongSun}` };
-    })();
+    const originLabel = usingGPS ? 'Your current location' : isDefaultOrigin ? ORIGIN_LABEL : 'Start point from a shared link';
+    const banner = isNight ? { Icon: Moon, text: 'Night-time plan. Compare lighting and check access-point hours.' }
+        : temp == null ? { Icon: Sun, text: 'Weather unavailable for this time. Shade and shelter include path-based estimates.' }
+            : { Icon: Thermometer, text: `Departure forecast feels like ${Math.round(temp)}°C${forecast?.rain_probability == null ? '' : ` · rain probability ${Math.round(forecast.rain_probability)}%`}.` };
+    const planningControls = <div className="space-y-3">
+        <WalkingRequirements needs={needs} profile={profile} onChange={value => { setNeeds(normaliseNeeds(value)); setChosenMode(null); }} />
+        <DepartureControl departure={planningTime} onChange={value => { setDeparture(value); setChosenMode(null); }} onNow={() => { setDeparture(new Date().toISOString()); setReloadVersion(v => v + 1); }} forecast={forecast} />
+    </div>;
 
     const ModeIcon = MODE_ICON[shownMode];
 
@@ -762,6 +633,15 @@ function ResidentPageContent() {
                 </div>
             )}
 
+            {dataError && (
+                <div role="alert" className="tg-banner">
+                    <span>We could not load the walking paths.</span>
+                    <button className="tg-btn" style={{ width: 'auto' }} onClick={() => {
+                        setLoadingDb(true); setReloadVersion((version) => version + 1);
+                    }}>Try again</button>
+                </div>
+            )}
+
             {/* Map */}
             <div className="tg-map">
                 <div style={{ position: 'absolute', inset: 0 }}>
@@ -769,8 +649,9 @@ function ResidentPageContent() {
                         routes={mapRoutes}
                         activeRouteId={activeRoute?.mode ?? ''}
                         reports={reports}
+                        assets={walkingData?.assets ?? []}
                         startCoords={userCoords}
-                        endCoords={currentDest.coords}
+                        endCoords={activeRoute ? [activeRoute.entrance.lat, activeRoute.entrance.lng] : currentDest.coords}
                         startLabel={usingGPS ? 'You' : 'Start'}
                         reduceMotion={prefs.reduceMotion}
                         highContrast={prefs.highContrast}
@@ -785,9 +666,10 @@ function ResidentPageContent() {
                 {step === 'where' && (
                     <div className="tg-stack">
                         <h1 className="tg-h2">Where are you going?</h1>
+                        {planningControls}
 
                         <div role="radiogroup" aria-label="Destination" className="tg-stack">
-                            {DESTINATIONS.map((d) => (
+                            {places.map((place) => { const d = { ...place, id: place.external_id || place.id }; return (
                                 <button
                                     key={d.id}
                                     role="radio"
@@ -801,7 +683,7 @@ function ResidentPageContent() {
                                     <span style={{ flex: 1, fontWeight: 800 }}>{d.name}</span>
                                     <MapPin size={24} aria-hidden style={{ flexShrink: 0 }} />
                                 </button>
-                            ))}
+                            ); })}
                         </div>
 
                         <div className="tg-stack" style={{ gap: '.4rem' }}>
@@ -812,7 +694,7 @@ function ResidentPageContent() {
                                 </div>
                                 {usingGPS || !isDefaultOrigin ? (
                                     <button className="tg-btn" style={{ width: 'auto', flexShrink: 0 }} onClick={useDefaultOrigin}>
-                                        Use PASUM
+                                        Use sample start
                                     </button>
                                 ) : (
                                     <button className="tg-btn" style={{ width: 'auto', flexShrink: 0 }} onClick={handleGetLocation} disabled={geoBusy}>
@@ -842,6 +724,13 @@ function ResidentPageContent() {
                             </div>
                         </div>
 
+                        <PlaceDiscovery items={discovery} budget={needs.budget_min} onChoose={(asset: WalkingAsset) => {
+                            chooseDest(asset.external_id || asset.id); setStep('route');
+                        }} />
+                        <div className="flex flex-wrap gap-3 text-sm font-bold">
+                            <button type="button" onClick={() => setReloadVersion(v => v + 1)} className="min-h-11 underline">Refresh paths & checks</button>
+                            <a href="/verification" className="inline-flex min-h-11 items-center underline">Verification records</a>
+                        </div>
                         <button className="tg-btn tg-btn-primary" onClick={() => { buzz(); setStep('route'); }}>
                             Show my routes
                         </button>
@@ -861,15 +750,27 @@ function ResidentPageContent() {
                         </div>
 
                         <h1 className="tg-h2">Choose your route</h1>
+                        {planningControls}
+                        {entrances.length > 0 && <label className="tg-label" htmlFor="arrival-entrance">Arrival access point
+                            <select id="arrival-entrance" className="tg-input" style={{ minHeight: '3rem' }} value={entranceId} onChange={e => { setEntranceId(e.target.value); setChosenMode(null); }}>
+                                <option value="">Best available access point</option>
+                                {entrances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                            </select>
+                        </label>}
+
 
                         {loadingDb ? (
                             <p className="tg-note" role="status">Loading footpaths…</p>
                         ) : !plan || !activeRoute ? (
-                            <p className="tg-note tg-warnbox" role="alert">
-                                We could not find a walking route from here. Go back and try a different start or destination.
-                            </p>
+                            <div className="tg-note tg-warnbox" role="alert">
+                                <RouteQualityBar />
+                                {plan?.reasons.map(reason => <span key={reason} style={{ display: 'block', marginTop: '.5rem' }}>{reason}</span>)}
+                                {!plan && 'Load walking data and choose a mapped place to plan a trip.'}
+                            </div>
                         ) : (
                             <>
+                                <RouteQualityBar route={activeRoute} best={shownMode === recommended} />
+                                <RouteDetails route={activeRoute} />
                                 <div role="radiogroup" aria-label="Route choices" className="tg-stack">
                                     {visibleModes.map((m) => {
                                         const r = plan.routes[m];
@@ -893,6 +794,7 @@ function ResidentPageContent() {
                                                         <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{MODE_LABEL[m]}</span>
                                                         {m === recommended && <span className="tg-badge">Recommended</span>}
                                                     </span>
+                                                    <span className="mt-2 block"><RouteQualityBar route={r} best={m === recommended} compact /></span>
                                                     <span className="tg-small" style={{ display: 'block', marginTop: 2 }}>
                                                         {reasonFor(m, r, isNight)}
                                                     </span>
@@ -936,6 +838,7 @@ function ResidentPageContent() {
                         <div>
                             <p className="tg-label">Walking to</p>
                             <h1 className="tg-h2">{currentDest.name}</h1>
+                            <p className="tg-small">Arrival: {activeRoute?.entrance.name ?? currentDest.name}</p>
                         </div>
 
                         <div className="flex items-end justify-between gap-3">
@@ -951,6 +854,8 @@ function ResidentPageContent() {
                                 <ModeIcon size={20} aria-hidden /> {MODE_LABEL[shownMode]} route
                             </span>
                         </div>
+
+                        {activeRoute && <RouteQualityBar route={activeRoute} best={shownMode === recommended} />}
 
                         <button className="tg-btn tg-btn-primary" onClick={() => { setShowReportModal(true); setReportMsg(null); buzz(); }}>
                             <AlertTriangle size={24} aria-hidden /> Report a problem
@@ -1123,10 +1028,16 @@ function ResidentPageContent() {
     );
 }
 
+function ResidentPageWithParams() {
+    const searchParams = useSearchParams();
+    const ready = useClientReady();
+    return ready ? <ResidentPageContent key={searchParams.toString()} /> : <div role="status">Loading your walk…</div>;
+}
+
 export default function ResidentPage() {
     return (
         <Suspense fallback={<div role="status" style={{ padding: '1.5rem', textAlign: 'center', fontSize: '1rem', fontWeight: 700, color: '#444B55' }} className="font-sans">Loading your walk…</div>}>
-            <ResidentPageContent />
+            <ResidentPageWithParams />
         </Suspense>
     );
 }

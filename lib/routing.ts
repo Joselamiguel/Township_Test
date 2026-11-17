@@ -29,6 +29,11 @@ export interface PathEdge {
     geometry: [number, number][]; // [lng, lat]
     length_m: number;
     kind: 'footway' | 'path' | 'pedestrian' | 'steps' | 'street' | 'crossing' | 'service';
+    pedestrian_access?: boolean;
+    covered?: boolean | null;
+    source_edge_id?: number;
+    source_length_m?: number;
+    cost_fraction?: number;
     has_steps: boolean;
     slope_pct: number | null;
     surface_rating: number | null; // 1 smooth, 2 uneven, 3 broken
@@ -135,6 +140,8 @@ export function buildGraph(nodes: PathNode[], edges: PathEdge[]): Graph {
     };
 
     for (const rawE of edges) {
+        // Road carriageways and explicitly forbidden edges never enter the walking graph.
+        if (rawE.kind === 'street' || rawE.pedestrian_access === false) continue;
         const id = Number(rawE.id);
         const from_node = Number(rawE.from_node);
         const to_node = Number(rawE.to_node);
@@ -275,6 +282,8 @@ export interface CostContext {
     slot: TimeSlot;
     hazards: Map<number, HazardReport[]>;
     strictUnknown?: boolean;
+    speedMps?: number;
+    heatMultiplier?: number;
 }
 
 export interface EdgeEval {
@@ -309,7 +318,15 @@ function litFor(e: PathEdge): { v: number; src: DataSource } {
 }
 
 export function evaluateEdge(e: PathEdge, ctx: CostContext): EdgeEval {
-    const p = PROFILES[ctx.profile];
+    // A facility can split a path mid-edge. Scale one full-edge evaluation so crossing
+    // waits and hazards are not charged again for every fragment.
+    if (e.source_length_m !== undefined && e.cost_fraction !== undefined) {
+        const whole = evaluateEdge({ ...e, length_m: e.source_length_m, source_length_m: undefined, cost_fraction: undefined }, ctx);
+        const f = e.cost_fraction;
+        return { ...whole, cost: whole.cost * f, walk_s: whole.walk_s * f, wait_s: whole.wait_s * f,
+            sun_s: whole.sun_s * f, dark_m: whole.dark_m * f };
+    }
+    const p = { ...PROFILES[ctx.profile], speed_mps: ctx.speedMps ?? PROFILES[ctx.profile].speed_mps };
     const w = MODE_WEIGHTS[ctx.mode];
     const A = ASSUMPTIONS;
     const hard: string[] = [];
@@ -384,7 +401,7 @@ export function evaluateEdge(e: PathEdge, ctx: CostContext): EdgeEval {
     // --- live hazard reports ---
     let shadeCap: number | null = null;
     let litMult = 1;
-    const edgeHazards = ctx.hazards.get(Number(e.id)) ?? [];
+    const edgeHazards = ctx.hazards.get(Number(e.source_edge_id ?? e.id)) ?? [];
     for (const h of edgeHazards) {
         const verified = h.status === 'verified';
         switch (h.kind) {
@@ -421,7 +438,7 @@ export function evaluateEdge(e: PathEdge, ctx: CostContext): EdgeEval {
     const isNight = ctx.slot === 'night';
     const sun_s = isNight ? 0 : walk_s * (1 - shade);
     const dark_m = isNight ? length_m * (1 - lit) : 0;
-    const heat = isNight ? 0 : sun_s * w.heat;
+    const heat = isNight ? 0 : sun_s * w.heat * (ctx.heatMultiplier ?? 1);
     const dark = isNight ? walk_s * (1 - lit) * w.dark : 0;
 
     return {
