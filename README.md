@@ -51,6 +51,8 @@ The route summary includes a **red/yellow/green bar**, a text label and an icon.
 
 See the [walking planner and verification guide](docs/walking-planner.md) for audit steps, the record model, confidence rules and estimation limits. The default pilot contains mapped access points, **no invented verified rests and no fabricated audit records**. Unknown conditions normally produce yellow routes. Add genuine observations in `/verification`, then use “Leave now” to refresh the planner.
 
+The [team design direction](docs/team-design-direction.md) maps the environmental-routing and community ideas to the UI and future data work. The planner provides information layers with explicit unknown/expired states and a dimensional comfort breakdown; the source snapshot currently has no shade, cover or lighting observations. Satellite canopy analysis, live radar, shared voting and automatic contact alerts require additional data or backend work.
+
 ### Database configuration
 
 The app and setup scripts default to the development database created by Compose. Copy `.env.example` to `.env.local` only if you need to override `DATABASE_URL`. It is a **server-only** connection string; never expose it with a `NEXT_PUBLIC_` prefix. Old Supabase environment variables are no longer used.
