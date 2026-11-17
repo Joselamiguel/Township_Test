@@ -8,6 +8,8 @@ import { observationFields } from '@/lib/verification-fields';
 import { malaysiaInput, fromMalaysiaInput } from '@/lib/comfort';
 import { DEFAULT_ORIGIN } from '@/lib/precinct';
 import type { WalkingData, VerificationTarget, AssetKind, PlaceCategory, ObservationValue } from '@/lib/walking';
+import { IS_PAGES_PREVIEW } from '@/lib/site';
+import VerificationPreview from '@/components/walking/VerificationPreview';
 
 const Map = dynamic(() => import('@/components/map/InteractiveMap'), { ssr: false });
 const control = 'mt-1 min-h-11 w-full rounded-lg border border-slate-400 bg-white px-3 py-2 text-slate-900';
@@ -131,5 +133,5 @@ function VerificationWorkspace() {
 }
 export default function VerificationPage() {
     const ready = useClientReady();
-    return ready ? <VerificationWorkspace /> : <main className="p-6" role="status">Loading verification workspace…</main>;
+    return ready ? (IS_PAGES_PREVIEW ? <VerificationPreview /> : <VerificationWorkspace />) : <main className="p-6" role="status">Loading verification workspace…</main>;
 }

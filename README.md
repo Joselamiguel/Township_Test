@@ -4,6 +4,18 @@ A pedestrian walking planner and footpath maintenance dashboard. Residents can c
 
 The app now runs on **Next.js → API routes → PostgreSQL/PostGIS**. It uses free, open-source software and the included OpenStreetMap snapshot. No hosted database account, API key or database subscription is required for local development.
 
+The public [GitHub Pages site](https://roshanm75.github.io/Township_Test/) is an **interactive preview** of the walking planner, built from the included OSM snapshot. It supports the map, personal needs, route comparisons, confidence explanations, reachable places and shared walk links. Shared maintenance reports and verification edits need the full server version below. See the [GitHub Pages deployment guide](docs/github-pages.md).
+
+To build and test the public version without a database:
+
+```bash
+npm ci
+npm run build:pages
+npm run preview:pages
+```
+
+The Pages build generates actual HTML/CSS/JavaScript in `out/`, with the `/Township_Test/` prefix and public source data. It never reads or exports the local database. `npm run build` continues to build the full server application.
+
 ## Local setup
 
 Prerequisites: **Node.js 24 LTS** (`nvm use`), npm, and Docker with Docker Compose. Node.js 22.18 or later is the minimum for the test runner.
@@ -101,7 +113,7 @@ npm start
 
 Unit tests cover pedestrian filtering, report validation, shared links, evidence expiry, actual rest detours, entrance availability, strict requirements, budgets, reachable places and forecast handling. Integration tests start the built Next.js server against a temporary real PostgreSQL/PostGIS database, exercise report creation/fixing, asset anchoring, verification history, spatial checks, SQL parameter handling, rollback, concurrent requests and outages, then remove only that test database. They require the local database to be running and a role allowed to create test databases; the Compose development role supports this.
 
-CI uses a PostGIS service and runs setup, lint, type checking, unit tests, build and integration tests. Deploying the app itself requires a Next.js server runtime because its APIs access PostgreSQL; GitHub Pages static hosting is unsuitable.
+CI uses a PostGIS service and runs setup, lint, type checking, unit tests, build and integration tests. The full shared app requires a Next.js server runtime because its APIs access PostgreSQL. A separate Pages workflow builds and deploys the interactive snapshot preview; it cannot host those APIs or a database.
 
 ## Free supporting services and data
 
