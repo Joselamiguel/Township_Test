@@ -14,10 +14,11 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { loadReports, markReportFixed, loadWalkingData } from '@/lib/api';
 import type { MaintenanceDefect } from '@/lib/types';
-import { PILOTS,pilotFromParams,type PilotId } from '@/lib/pilots';
+import { PILOTS,pilotFromParams,isPilotAvailable,type PilotId } from '@/lib/pilots';
 import { useClientReady } from '@/lib/use-client-ready';
 import PilotSelector from '@/components/walking/PilotSelector';
 import PilotSources from '@/components/walking/PilotSources';
+import PilotUnavailable from '@/components/walking/PilotUnavailable';
 import {
     rankInterventions,
     estimateDefectCost,
@@ -99,7 +100,7 @@ export default function AdminDashboardPage() {
     const ready=useClientReady();
     return ready?<Suspense fallback={<p role="status">Loading area…</p>}><DashboardWithParams/></Suspense>:<main className="p-6" role="status">Loading maintenance dashboard…</main>;
 }
-function DashboardWithParams(){const params=useSearchParams();return <DashboardWorkspace key={params.toString()} area={pilotFromParams(params)}/>;}
+function DashboardWithParams(){const params=useSearchParams(),area=pilotFromParams(params);return isPilotAvailable(area)?<DashboardWorkspace key={params.toString()} area={area}/>:<PilotUnavailable area={area}/>;}
 
 function DashboardWorkspace({area}:{area:PilotId}) {
     const router=useRouter();

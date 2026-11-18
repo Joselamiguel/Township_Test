@@ -46,7 +46,8 @@ import PaceCalibration from '@/components/walking/PaceCalibration';
 import QuickConditionUpdate from '@/components/walking/QuickConditionUpdate';
 import PilotSelector from '@/components/walking/PilotSelector';
 import PilotSources from '@/components/walking/PilotSources';
-import { PILOTS,pilotFromParams,type PilotId,type PilotContext } from '@/lib/pilots';
+import PilotUnavailable from '@/components/walking/PilotUnavailable';
+import { PILOTS,pilotFromParams,isPilotAvailable,type PilotId,type PilotContext } from '@/lib/pilots';
 import { usePlannerResult } from '@/lib/use-planner';
 import { metres } from '@/lib/walking-geometry';
 
@@ -1183,6 +1184,8 @@ function ResidentPageContent() {
 function ResidentPageWithParams() {
     const searchParams = useSearchParams();
     const ready = useClientReady();
+    const area=pilotFromParams(searchParams);
+    if(!isPilotAvailable(area))return <PilotUnavailable area={area}/>;
     return ready ? <ResidentPageContent key={searchParams.toString()} /> : <div role="status">Loading your walk…</div>;
 }
 

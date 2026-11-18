@@ -6,9 +6,10 @@ import { loadWalkingData,loadPilotContext } from '@/lib/api';
 import type { WalkingData } from '@/lib/walking';
 import PreviewNotice from './PreviewNotice';
 import { useClientReady } from '@/lib/use-client-ready';
-import { pilotFromParams,type PilotContext,type PilotId,PILOTS } from '@/lib/pilots';
+import { pilotFromParams,isPilotAvailable,type PilotContext,type PilotId,PILOTS } from '@/lib/pilots';
 import PilotSelector from './PilotSelector';
 import PilotSources from './PilotSources';
+import PilotUnavailable from './PilotUnavailable';
 
 function PreviewContent({area}:{area:PilotId}) {
     const router=useRouter();
@@ -41,5 +42,5 @@ function PreviewContent({area}:{area:PilotId}) {
     </main>;
 }
 
-function PreviewWithParams(){const params=useSearchParams();return <PreviewContent key={params.toString()} area={pilotFromParams(params)}/>;}
+function PreviewWithParams(){const params=useSearchParams(),area=pilotFromParams(params);return isPilotAvailable(area)?<PreviewContent key={params.toString()} area={area}/>:<PilotUnavailable area={area}/>;}
 export default function VerificationPreview(){const ready=useClientReady();return ready?<Suspense fallback={<p role="status">Loading area…</p>}><PreviewWithParams/></Suspense>:<p role="status">Loading mapped places…</p>;}

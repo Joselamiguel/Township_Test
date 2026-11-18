@@ -3,6 +3,7 @@ import { Footprints, ArrowRight, ArrowUpRight, Sun, Accessibility, ClipboardChec
 import PreviewNotice from '@/components/walking/PreviewNotice';
 import { IS_PAGES_PREVIEW } from '@/lib/site';
 import HomeWalkPreview from '@/components/walking/HomeWalkPreview';
+import { KL_PILOT_AVAILABLE } from '@/lib/pilots';
 
 export default function Home() {
     return (
@@ -16,9 +17,10 @@ export default function Home() {
             <main className="mx-auto max-w-7xl px-5 pb-12 pt-8 sm:px-8 lg:pt-12">
                 <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-14">
                     <section>
-                        <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#ceddce] bg-[#eaf1e7] px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#3c604a]"><MapPin size={15} aria-hidden />Pasar Seni · Chinatown · Masjid Jamek</p>
+                        <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#ceddce] bg-[#eaf1e7] px-3 py-2 text-xs font-bold uppercase tracking-widest text-[#3c604a]"><MapPin size={15} aria-hidden />{KL_PILOT_AVAILABLE?'Pasar Seni · Chinatown · Masjid Jamek':'Explore the Elmina bridges example'}</p>
                         <h1 className="max-w-xl text-[clamp(2.6rem,5vw,4.6rem)] font-extrabold leading-[1.08] tracking-[-.045em]">A better walk,<br /><span className="text-[#47745a]">on your terms.</span></h1>
-                        <p className="mt-6 max-w-lg text-lg leading-relaxed text-[#536355]">Discover central KL on foot, from station areas to heritage streets. Find mapped places and facilities, compare the conditions along the route, and see what still needs checking.</p>
+                        <p className="mt-6 max-w-lg text-lg leading-relaxed text-[#536355]">{KL_PILOT_AVAILABLE?'Discover central KL on foot, from station areas to heritage streets. Find mapped places and facilities, compare the conditions along the route, and see what still needs checking.':'Try a walk between the Elmina bridges. Choose your pace, compare the mapped paths and see which conditions still need checking.'}</p>
+                        {!KL_PILOT_AVAILABLE&&<p className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">Central KL pilot · data pending. Pasar Seni, Chinatown and Masjid Jamek will open when their real map data is ready.</p>}
                         <div className="mt-7 flex flex-wrap gap-3"><Link href="/resident" className="inline-flex min-h-14 items-center justify-center gap-3 rounded-xl bg-[#A4262C] px-6 py-3 font-bold text-white shadow-sm">Plan a walk<ArrowRight size={20} aria-hidden /></Link>
                             <Link href="/verification" className="inline-flex min-h-14 items-center gap-2 rounded-xl border border-[#c6d2c6] bg-white px-5 py-3 font-bold">Explore path information<ArrowUpRight size={18} aria-hidden /></Link></div>
                         <div className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-[#536355]"><span>Pedestrian routes</span><span>Personal walking needs</span><span>Explainable confidence</span></div>

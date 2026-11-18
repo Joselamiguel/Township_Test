@@ -4,6 +4,6 @@ This directory is reserved for the **actual, dated public-source snapshot** gene
 
 At implementation time the running Codex cloud permits GitHub, weather and map tiles, but blocks Overpass and the Malaysian data-download hosts with `CONNECT 403`. The restricted domain update has been saved in the cloud environment draft and has not been published. **No production KL graph, places, surveys or facilities have been fabricated.** `bundle.json` and `sources.json` will be added after those downloads are enabled and their coverage has been reviewed.
 
-Until then the default Pages production build stops before publishing an incomplete pilot. The existing public site remains on the previously deployed version. `npm run build:pages -- --example-only` checks the retained Elmina export locally; it is explicitly forbidden in GitHub Actions and does not validate a KL deployment.
+Until then `npm run build:pages` publishes the working Elmina example and labels KL as data pending. KL is disabled in the area selector; direct KL links explain the pending data and offer the Elmina example without requesting missing source files. A validated real bundle enables KL and makes it the default automatically. A malformed or private bundle still stops the build. No placeholder KL network is generated.
 
 See [pilot setup and GIS review](../../docs/pasar-seni-pilot.md) for acquisition, attribution, import and verification steps.

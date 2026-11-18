@@ -1,13 +1,49 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync,writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPreviewSnapshot } from '../scripts/preview-snapshot.mjs';
 import { planJourney } from '../lib/journeys.ts';
 import { DEFAULT_ORIGIN } from '../lib/precinct.ts';
 import { DEFAULT_NEEDS } from '../lib/walking.ts';
+import { loadPagesPilot,pagesPilotMetadata } from '../scripts/pilot-export.mjs';
+import { pilotFixture } from './helpers/pilot-fixture.mjs';
+
+test('Pages uses the real Elmina example while a missing KL bundle stays pending',async t=>{
+    const dir=mkdtempSync(join(tmpdir(),'township-pending-pages-'));
+    t.after(()=>rmSync(dir,{recursive:true,force:true}));
+    const pilot=await loadPagesPilot(join(dir,'missing.json'));
+    assert.equal(pilot,null);
+    assert.deepEqual(pagesPilotMetadata(pilot),{areas:['elmina'],default_area:'elmina',pilot_status:{'pasar-seni':'awaiting-source-data',elmina:'available'}});
+});
+
+test('a valid KL source enables the pilot; corrupt or private sources never fall back silently',async t=>{
+    const dir=mkdtempSync(join(tmpdir(),'township-ready-pages-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+    const file=join(dir,'bundle.json'),{bundle}=pilotFixture();
+    writeFileSync(file,JSON.stringify(bundle));
+    const loaded=await loadPagesPilot(file);
+    assert.equal(loaded.context.dataset_id,bundle.context.dataset_id);
+    assert.deepEqual(pagesPilotMetadata(loaded),{areas:['pasar-seni','elmina'],default_area:'pasar-seni',pilot_status:{'pasar-seni':'available',elmina:'available'}});
+    writeFileSync(file,'{invalid');await assert.rejects(()=>loadPagesPilot(file),SyntaxError);
+    bundle.walking.verifications.push({reviewer:'Private test record'});
+    writeFileSync(file,JSON.stringify(bundle));await assert.rejects(()=>loadPagesPilot(file),/field-auditor/);
+});
+
+test('Pages defaults and navigation availability agree with the built source bundle',()=>{
+    for(const ready of ['true','false',''])execFileSync(process.execPath,['--input-type=module','-e',`
+        import assert from 'node:assert/strict';
+        import {isPilotAvailable,pilotFromParams,DEFAULT_PILOT} from './lib/pilots.ts';
+        const ready=process.env.NEXT_PUBLIC_KL_PILOT_AVAILABLE==='true';
+        assert.equal(DEFAULT_PILOT,ready?'pasar-seni':'elmina');
+        assert.equal(pilotFromParams(new URLSearchParams()),DEFAULT_PILOT);
+        assert.equal(isPilotAvailable('pasar-seni'),ready);assert.equal(isPilotAvailable('elmina'),true);
+        // Keep explicit KL links intact so the UI can explain its unavailable state.
+        assert.equal(pilotFromParams(new URLSearchParams('area=pasar-seni')),'pasar-seni');
+        assert.equal(pilotFromParams(new URLSearchParams('destId=elmina_rainbow_bridge')),'elmina');
+    `],{env:{...process.env,NEXT_PUBLIC_SITE_MODE:'pages',NEXT_PUBLIC_KL_PILOT_AVAILABLE:ready}});
+});
 
 test('the public snapshot plans actual Elmina walks without inventing field checks', t => {
     const dir = mkdtempSync(join(tmpdir(), 'township-pages-'));

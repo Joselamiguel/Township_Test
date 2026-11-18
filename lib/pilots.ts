@@ -1,7 +1,11 @@
 import { DEFAULT_ORIGIN, DESTINATIONS } from './precinct.ts';
 
 export type PilotId = 'pasar-seni' | 'elmina';
-export const DEFAULT_PILOT: PilotId = 'pasar-seni';
+// The Pages builder derives this public flag from the validated source files.
+// The server version checks its imported datasets through its API instead.
+export const KL_PILOT_AVAILABLE = process.env.NEXT_PUBLIC_SITE_MODE !== 'pages'
+    || process.env.NEXT_PUBLIC_KL_PILOT_AVAILABLE === 'true';
+export const DEFAULT_PILOT: PilotId = KL_PILOT_AVAILABLE ? 'pasar-seni' : 'elmina';
 export const PILOTS = {
     'pasar-seni': { id: 'pasar-seni' as const, name: 'Pasar Seni · Chinatown · Masjid Jamek', short_name: 'Central KL pilot',
         description: 'Discover places, facilities and pedestrian connections around the stations and heritage streets.',
@@ -18,6 +22,7 @@ export const PILOTS = {
 };
 
 export function isPilot(value: unknown): value is PilotId { return value === 'pasar-seni' || value === 'elmina'; }
+export function isPilotAvailable(area: PilotId) { return area === 'elmina' || KL_PILOT_AVAILABLE; }
 export function pilotFromParams(params: Pick<URLSearchParams, 'get'>): PilotId {
     const requested = params.get('area');
     if (isPilot(requested)) return requested;

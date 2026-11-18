@@ -26,7 +26,16 @@ assert.ok(graph.nodes.length && graph.edges.length);
 assert.ok(graph.edges.every(e => e.pedestrian_access === true && e.kind !== 'street'));
 assert.equal(data.verifications.length, 0, 'The public source build must never publish local observations.');
 assert.equal(data.assets.filter(a => a.kind === 'destination').length, 2);
-assert.ok(metadata.validation_only||metadata.areas.includes('pasar-seni'),'The production site needs the central KL pilot.');
+assert.ok(metadata.areas.includes('elmina'),'Keep the working Elmina example available.');
+assert.ok(metadata.areas.includes(metadata.default_area),'The default area needs actual source data.');
+const klReady=metadata.areas.includes('pasar-seni');
+assert.equal(metadata.pilot_status['pasar-seni'],klReady?'available':'awaiting-source-data');
+assert.equal(metadata.default_area,klReady?'pasar-seni':'elmina');
+if(!klReady){
+    const home=await readFile(new URL('index.html',out),'utf8');
+    assert.ok(home.includes('Central KL pilot · data pending'),'The public site must explain the pending KL source.');
+    assert.ok(!home.includes('Discover central KL on foot'),'Do not advertise unavailable KL routing.');
+}
 for(const area of metadata.areas){
     const read=async name=>JSON.parse(await readFile(new URL(`pilot/${area}/${name}.json`,out),'utf8'));
     const context=await read('context');assert.equal(context.area_id,area);

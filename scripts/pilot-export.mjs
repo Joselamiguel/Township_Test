@@ -1,8 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdir,writeFile } from 'node:fs/promises';
+import { mkdir,writeFile,readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pointInPilot } from '../lib/pilots.ts';
 import { gisLayers } from './pilot-snapshot.mjs';
+
+/** Missing source data leaves KL pending. Corrupt or private data still stops the build. */
+export async function loadPagesPilot(path){
+    let contents;
+    try{contents=await readFile(path,'utf8');}
+    catch(error){if(error.code==='ENOENT')return null;throw error;}
+    const bundle=JSON.parse(contents);validatePilotSnapshot(bundle);return bundle;
+}
+
+export function pagesPilotMetadata(pilot){
+    return {areas:pilot?['pasar-seni','elmina']:['elmina'],default_area:pilot?'pasar-seni':'elmina',
+        pilot_status:{'pasar-seni':pilot?'available':'awaiting-source-data',elmina:'available'}};
+}
 
 /** Fail before a source build could publish private records or a mismatched graph. */
 export function validatePilotSnapshot(bundle){
