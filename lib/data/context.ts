@@ -33,9 +33,9 @@ export function districtPopulation(rows: Record<string,string>[], area: PilotId)
     const chosen=rows.filter(r=>r.district===district&&r.sex==='both'&&r.ethnicity==='overall');
     const year=chosen.map(r=>r.date?.slice(0,4)).filter(y=>/^\d{4}$/.test(y??'')).sort().at(-1)??null;
     const current=chosen.filter(r=>r.date.startsWith(year||'unavailable'));
-    const total=current.find(r=>r.age==='overall');const population=total?.population?.trim()?Number(total.population)*1000:null;
+    const total=current.find(r=>r.age==='overall');const population=total?.population?.trim()?Math.round(Number(total.population)*1000):null;
     const older=current.filter(r=>r.age!=='overall'&&parseInt(r.age,10)>=65&&r.population.trim());
-    const sum=older.reduce((n,r)=>n+Number(r.population)*1000,0);
+    const sum=older.reduce((n,r)=>n+Math.round(Number(r.population)*1000),0);
     const olderPopulation=older.length&&Number.isFinite(sum)?sum:null;
     return {district,year,population:Number.isFinite(population)&&population!==null&&population>=0?population:null,older_population:olderPopulation!==null&&olderPopulation>=0?olderPopulation:null,
         older_share:population&&olderPopulation!==null?olderPopulation/population:null,

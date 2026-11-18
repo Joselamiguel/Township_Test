@@ -67,6 +67,8 @@ export function mappedAssets(raw:OsmSource, edges:PathEdge[], area:PilotId) {
     const make=(element:OsmElement,p:[number,number],kind:WalkingAsset['kind'],category:PlaceCategory,name:string,key:string,parent:string|null=null):WalkingAsset=>{
         const t=element.tags??{},near=nearest(p,t.level),joined=near&&near.distance<=30?near:null;
         const properties:Record<string,ObservationValue>={osm_type:element.type,osm_id:String(element.id),...(t.opening_hours?{opening_hours:t.opening_hours}:{}),
+            ...(t.name?{osm_name:t.name}:{}),...(t['name:ms']?{name_ms:t['name:ms']}:{}),...(t['name:en']?{name_en:t['name:en']}:{}),...(t.ref?{station_ref:t.ref}:{}),
+            ...(t.tourism?{tourism_type:t.tourism}:{}),
             ...(t.wikidata?{wikidata:t.wikidata}:{}),...(t.wikipedia?{wikipedia:t.wikipedia}:{}),...(t.website?{website:t.website}:{}),
             ...(t.wheelchair?{osm_wheelchair:t.wheelchair}:{}),...(kind==='rest'?{has_seat:true}:{}),...(t.covered?{osm_covered:t.covered}:{}),
             ...(t.level?{osm_level:t.level}:{}),connection_model:joined?'nearest_mapped_path':'unconnected'};
@@ -80,7 +82,8 @@ export function mappedAssets(raw:OsmSource, edges:PathEdge[], area:PilotId) {
         if(!t.name&&!t['name:en']&&classificationResult.kind==='destination'&&!t.shop)continue;
         const {kind,category,fallback}=classificationResult,key=`osm:${element.type}:${element.id}`;
         if(used.has(key))continue;used.add(key);
-        const place=make(element,p,kind,category,t['name:en']||t.name||fallback,key);
+        const name=t['name:en']||t.name||fallback;
+        const place=make(element,p,kind,category,kind==='transit'&&t.ref&&!name.includes(t.ref)?`${name} · ${t.ref}`:name,key);
         if(kind==='destination'||kind==='transit'){
             place.edge_id=null;place.edge_fraction=null;place.connection_distance_m=null;place.anchor_lat=null;place.anchor_lng=null;
             const containing=element.nodes?element:buildings.find(b=>contains(b.geometry!,p));
@@ -95,6 +98,7 @@ export function mappedAssets(raw:OsmSource, edges:PathEdge[], area:PilotId) {
             }
             assets.push(place);
             if(doors.length){for(const door of doors){const position=representative(door);if(!position)continue;const access=make(door,position,'entrance',category,`${place.name} · ${door.tags?.ref||door.tags?.name||'mapped entrance'}`,`${key}:door:${door.id}`,place.id);
+                if(!door.tags?.opening_hours&&t.opening_hours){access.properties.opening_hours=t.opening_hours;access.properties.opening_hours_source=place.source_ref;}
                 access.properties.connection_model='mapped_entrance';assets.push(access);}}
             else { const access=make(element,p,'entrance',category,`${place.name} · approximate approach`,`${key}:approach`,place.id);
                 access.properties.connection_model='approximate_approach';assets.push(access); }

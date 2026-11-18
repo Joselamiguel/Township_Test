@@ -1,0 +1,105 @@
+[
+  {
+    "id": "osm",
+    "name": "OpenStreetMap / Overpass",
+    "url": "https://overpass-api.de/api/interpreter?data=%5Bout%3Ajson%5D%5Btimeout%3A90%5D%3B%28way%5Bhighway%7E%22%5E%28footway%7Cpath%7Cpedestrian%7Csteps%7Ccrossing%7Ccycleway%7Cservice%7Ctrack%29%24%22%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Bamenity%7E%22%5E%28bench%7Ctoilets%7Cdrinking_water%7Cshelter%7Cclinic%7Chospital%7Cpharmacy%7Cdoctors%7Cdentist%7Ccommunity_centre%7Clibrary%7Cmarketplace%7Crestaurant%7Ccafe%7Cfast_food%7Cfood_court%7Cplace_of_worship%29%24%22%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Bshop%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Btourism%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Bhistoric%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Bleisure%7E%22%5E%28park%7Cgarden%29%24%22%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Bplace%7E%22%5E%28square%7Cquarter%7Cneighbourhood%29%24%22%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnode%5Bentrance%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Brailway%7E%22%5E%28station%7Chalt%7Csubway_entrance%29%24%22%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bnwr%5Bpublic_transport%3Dstation%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Bway%5Bbuilding%5D%283.133%2C101.685%2C3.157%2C101.708%29%3Brelation%5Bpublic_transport%3Dstop_area%5D%283.133%2C101.685%2C3.157%2C101.708%29%3B%29%3Bout+body+geom%3B",
+    "license": "ODbL",
+    "status": "loaded",
+    "fetched_at": "2026-11-18T17:51:27.544Z",
+    "data_at": "2026-11-18T17:21:50Z",
+    "records": 5142,
+    "note": "Imported from a supplied source file.",
+    "sha256": "a2e05e1375e55629c329e6da61ec5e7c4d8e68c8946c5a55e8b64b5bb02b815e",
+    "archive_sha256": "5fb760b2ab6d0bd9ff0553d84cd8ed1153576a03642ceca1ecc190b72590e18f"
+  },
+  {
+    "id": "geofabrik",
+    "name": "Geofabrik alternative OSM import",
+    "url": "https://download.geofabrik.de/asia/malaysia-singapore-brunei.html",
+    "license": "ODbL",
+    "status": "not_loaded",
+    "fetched_at": null,
+    "data_at": null,
+    "records": 0,
+    "note": "Alternative source for the same OSM network. Use --geofabrik-pbf with osmium; the two OSM sources are not duplicate independent evidence."
+  },
+  {
+    "id": "gtfs-rail",
+    "name": "Malaysia GTFS · rapid-rail-kl",
+    "url": "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-rail-kl",
+    "license": "CC BY 4.0",
+    "status": "not_loaded",
+    "fetched_at": null,
+    "data_at": null,
+    "records": 0,
+    "note": "Not supplied for this offline import."
+  },
+  {
+    "id": "gtfs-bus",
+    "name": "Malaysia GTFS · rapid-bus-kl",
+    "url": "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-kl",
+    "license": "CC BY 4.0",
+    "status": "not_loaded",
+    "fetched_at": null,
+    "data_at": null,
+    "records": 0,
+    "note": "Not supplied for this offline import."
+  },
+  {
+    "id": "gtfs-feeder",
+    "name": "Malaysia GTFS · rapid-bus-mrtfeeder",
+    "url": "https://api.data.gov.my/gtfs-static/prasarana?category=rapid-bus-mrtfeeder",
+    "license": "CC BY 4.0",
+    "status": "not_loaded",
+    "fetched_at": null,
+    "data_at": null,
+    "records": 0,
+    "note": "Not supplied for this offline import."
+  },
+  {
+    "id": "dosm",
+    "name": "DOSM district population",
+    "url": "https://storage.dosm.gov.my/population/population_district.csv",
+    "license": "Malaysia open data terms / dataset licence",
+    "status": "loaded",
+    "fetched_at": "2026-11-18T17:51:28.546Z",
+    "data_at": "2026",
+    "records": 1,
+    "note": "Imported from a supplied source file.",
+    "sha256": "2c7caf2fc4bda1f58f12db6cc2d6d5f39148fbeaaa0516017eb59fb8e23784e0",
+    "archive_sha256": "acc74ca9ac04a3a375e478baafd30af72ed4e246a5e153e37c66ba0f0208839b"
+  },
+  {
+    "id": "ridership",
+    "name": "Rapid Rail daily station journeys",
+    "url": "https://storage.data.gov.my/transportation/rail/rapidrail_2026_daily.csv",
+    "license": "Malaysia open data terms / dataset licence",
+    "status": "not_loaded",
+    "fetched_at": null,
+    "data_at": null,
+    "records": 0,
+    "note": "Not supplied for this offline import."
+  },
+  {
+    "id": "wikidata",
+    "name": "Wikidata landmark context",
+    "url": "https://query.wikidata.org/sparql?query=SELECT+DISTINCT+%3Fitem+%3FitemLabel+%3FitemDescription+%3Flocation+WHERE+%7B+SERVICE+wikibase%3Abox+%7B+%3Fitem+wdt%3AP625+%3Flocation+.+bd%3AserviceParam+wikibase%3AcornerSouthWest+%22Point%28101.685+3.133%29%22%5E%5Egeo%3AwktLiteral+%3B+wikibase%3AcornerNorthEast+%22Point%28101.708+3.157%29%22%5E%5Egeo%3AwktLiteral+.+%7D+SERVICE+wikibase%3Alabel+%7B+bd%3AserviceParam+wikibase%3Alanguage+%22en%2Cms%22+.+%7D+%7D+LIMIT+300&format=json",
+    "license": "CC0",
+    "status": "not_loaded",
+    "fetched_at": null,
+    "data_at": null,
+    "records": 0,
+    "note": "Not supplied for this offline import."
+  },
+  {
+    "id": "satellite",
+    "name": "Sentinel-2 / ESA WorldCover scene catalogue",
+    "url": "https://planetarycomputer.microsoft.com/api/stac/v1/search",
+    "license": "Dataset-specific licences; see catalogue",
+    "status": "not_loaded",
+    "fetched_at": null,
+    "data_at": null,
+    "records": 0,
+    "note": "Not supplied for this offline import."
+  }
+]

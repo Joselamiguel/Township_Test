@@ -1,23 +1,28 @@
-import { mkdir,readFile,writeFile,copyFile,access } from 'node:fs/promises';
+import { mkdir,readFile,writeFile,access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PILOTS } from '../lib/pilots.ts';
-import { download,fileDigest,gtfsFiles,csvFile,geofabrikToOverpass } from './data-download.mjs';
-import { csvObjects } from '../lib/data/csv.ts';
+import { download,fileDigest,importSourceFile,gtfsFiles,csvFile,geofabrikToOverpass } from './data-download.mjs';
 import { createPilotSnapshot,gisLayers } from './pilot-snapshot.mjs';
+import { validatePilotSnapshot } from './pilot-export.mjs';
 
 const args=process.argv.slice(2),arg=(key)=>{const i=args.indexOf(key);return i<0?null:args[i+1];};
-const root=resolve(new URL('..',import.meta.url).pathname),raw=resolve(root,'.local/sources/pasar-seni'),out=resolve(root,arg('--out')||'data/pasar-seni');
+const root=resolve(new URL('..',import.meta.url).pathname),raw=resolve(root,arg('--raw-dir')||'.local/sources/pasar-seni'),out=resolve(root,arg('--out')||'data/pasar-seni');
 await mkdir(raw,{recursive:true});
 const [south,west,north,east]=PILOTS['pasar-seni'].bounds;
 const sources=[];
 async function acquire(id,name,url,file,{supplied=null,license='See source terms',essential=false,maxBytes=30000000,method='GET',body}={}){
     const path=resolve(raw,file);let metadata;
     try {
-        if(supplied){if(resolve(supplied)!==path)await copyFile(resolve(supplied),path);metadata={fetched_at:new Date().toISOString(),sha256:await fileDigest(path)};await writeFile(path+'.source.json',JSON.stringify(metadata));}
+        if(supplied){const digest=resolve(supplied)===path?{sha256:await fileDigest(path)}:await importSourceFile(resolve(supplied),path);metadata={fetched_at:new Date().toISOString(),...digest};await writeFile(path+'.source.json',JSON.stringify(metadata));}
         else if(args.includes('--reuse')){await access(path);metadata=JSON.parse(await readFile(path+'.source.json','utf8'));}
+        else if(args.includes('--offline')){
+            if(essential)throw Error(`${name} requires a supplied source file in offline mode.`);
+            sources.push({id,name,url,license,status:'not_loaded',fetched_at:null,data_at:null,records:0,note:'Not supplied for this offline import.'});
+            return null;
+        }
         else metadata=await download(url,path,{maxBytes,method,body,timeout:180});
-        sources.push({id,name,url,license,status:'loaded',fetched_at:metadata.fetched_at,data_at:null,records:0,note:supplied?'Imported from a supplied source file.':args.includes('--reuse')?'Using the explicitly selected cached source.':'Downloaded from the source.',sha256:metadata.sha256});
+        sources.push({id,name,url,license,status:'loaded',fetched_at:metadata.fetched_at,data_at:null,records:0,note:supplied?'Imported from a supplied source file.':args.includes('--reuse')?'Using the explicitly selected cached source.':'Downloaded from the source.',sha256:metadata.sha256,...(metadata.archive_sha256?{archive_sha256:metadata.archive_sha256}:{})});
         console.log(`${id}: source file ready`);return path;
     }catch(error){
         sources.push({id,name,url,license,status:'unavailable',fetched_at:null,data_at:null,records:0,note:error.message});
@@ -51,12 +56,15 @@ try {
     let lastStatic=0;
     for(const [key,category]of staticFeeds){
         const supplied=arg(`--gtfs-${key}-file`);
-        if(!supplied&&!args.includes('--reuse')&&lastStatic){const delay=16000-(Date.now()-lastStatic);if(delay>0)await new Promise(r=>setTimeout(r,delay));}
+        if(!supplied&&!args.includes('--reuse')&&!args.includes('--offline')&&lastStatic){const delay=16000-(Date.now()-lastStatic);if(delay>0)await new Promise(r=>setTimeout(r,delay));}
         const path=await acquire(`gtfs-${key}`,`Malaysia GTFS · ${category}`,`https://api.data.gov.my/gtfs-static/prasarana?category=${category}`,`${category}.zip`,{supplied,license:'CC BY 4.0',maxBytes:60000000});lastStatic=Date.now();
         if(path){try{inputs.gtfs[category]=await gtfsFiles(path,PILOTS['pasar-seni'].bounds);}catch(error){sources.at(-1).status='unavailable';sources.at(-1).note=`The feed could not be parsed: ${error.message}`;}}
     }
     const population=await acquire('dosm','DOSM district population','https://storage.dosm.gov.my/population/population_district.csv','population.csv',{supplied:arg('--population-file'),license:'Malaysia open data terms / dataset licence'});
-    inputs.population=await parseOptional('dosm',population,async path=>csvObjects(await readFile(path,'utf8')))??[];
+    inputs.population=await parseOptional('dosm',population,async path=>{
+        const rows=[];for await(const row of csvFile(path))if(row.district===PILOTS['pasar-seni'].district&&row.sex==='both'&&row.ethnicity==='overall')rows.push(row);
+        return rows;
+    })??[];
     const year=arg('--ridership-year')||String(new Date().getUTCFullYear());if(!/^20\d{2}$/.test(year))throw Error('Choose a valid ridership year.');
     const demand=await acquire('ridership','Rapid Rail daily station journeys',`https://storage.data.gov.my/transportation/rail/rapidrail_${year}_daily.csv`,'ridership.csv',{supplied:arg('--ridership-file'),license:'Malaysia open data terms / dataset licence',maxBytes:500000000});
     if(demand){const parsed=await parseOptional('ridership',demand,async()=>{
@@ -80,6 +88,7 @@ try {
         if(s.id==='wikidata'&&s.status==='loaded')s.records=bundle.context.landmarks.length;
         if(s.id==='satellite'&&s.status==='loaded'){s.records=bundle.context.environment.scenes.length;s.status='partial';s.note='Scene metadata and footprints only. No vegetation percentage, thermal map or street-level shade measurement has been computed.';}
     }
+    validatePilotSnapshot(bundle);
     await mkdir(out,{recursive:true});await writeFile(resolve(out,'bundle.json'),JSON.stringify(bundle)+'\n');
     await writeFile(resolve(out,'sources.json'),JSON.stringify(sources,null,2)+'\n');
     const gis=arg('--out')?resolve(out,'gis'):resolve(root,'.local/gis/pasar-seni');await mkdir(gis,{recursive:true});for(const [name,layer]of Object.entries(gisLayers(bundle)))await writeFile(resolve(gis,`${name}.geojson`),JSON.stringify(layer));

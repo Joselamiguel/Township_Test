@@ -23,7 +23,7 @@ The default `npm run dev` / `npm run build` / `npm start` application retains it
 
 ## Build locally
 
-The build always retains the actual Elmina source example. KL is enabled and becomes the default when a reviewed, valid `data/pasar-seni/bundle.json` is present. If that file is missing, the production build succeeds with Elmina as default and clearly labels KL as data pending; direct KL links show an explanation instead of requesting missing JSON. A malformed or private bundle still fails validation. The initial KL import needs the cloud network-domain change followed by `npm run data:refresh`; see [pilot setup](pasar-seni-pilot.md). Do not deploy test fixtures as the pilot.
+The build retains the actual Elmina source example and uses the included, validated `data/pasar-seni/bundle.json` to enable KL as the default. `npm run data:rebuild` reproduces that real-data snapshot from the included compressed source files without external downloads. If the KL bundle is missing, the production build succeeds with Elmina as default and clearly labels KL as data pending; direct KL links explain its status instead of requesting missing JSON. A malformed or private bundle still fails validation. See [pilot setup](pasar-seni-pilot.md). Do not deploy test fixtures as the pilot.
 
 Use Node.js 24 and the existing lockfile:
 

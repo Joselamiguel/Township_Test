@@ -3,8 +3,10 @@ import { promisify } from 'node:util';
 import { mkdir,writeFile,rename,rm,stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream,createWriteStream } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { createGunzip } from 'node:zlib';
+import { pipeline } from 'node:stream/promises';
 import { csvRows } from '../lib/data/csv.ts';
 
 const execute=promisify(execFile);
@@ -26,6 +28,18 @@ export async function download(url,path,{maxBytes=30000000,timeout=90,method='GE
 }
 
 export async function fileDigest(path){const hash=createHash('sha256');for await(const chunk of createReadStream(path))hash.update(chunk);return hash.digest('hex');}
+
+/** Original downloads can be stored losslessly compressed for repeatable offline imports. */
+export async function importSourceFile(source,destination){
+    const compressed=source.endsWith('.gz'),temporary=destination+'.partial';
+    await mkdir(dirname(destination),{recursive:true});
+    try{
+        if(compressed)await pipeline(createReadStream(source),createGunzip(),createWriteStream(temporary));
+        else await pipeline(createReadStream(source),createWriteStream(temporary));
+        await rename(temporary,destination);
+        return {sha256:await fileDigest(destination),...(compressed?{archive_sha256:await fileDigest(source)}:{})};
+    }catch(error){await rm(temporary,{force:true});throw error;}
+}
 
 export async function* csvFile(path){
     const lines=createInterface({input:createReadStream(path,{encoding:'utf8'}),crlfDelay:Infinity});

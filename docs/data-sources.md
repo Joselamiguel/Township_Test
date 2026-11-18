@@ -1,6 +1,6 @@
 # Walking data and provenance
 
-For the new **Pasar Seni–Chinatown–Masjid Jamek primary pilot**, see [source acquisition and GIS review](pasar-seni-pilot.md). Its data pipeline is separate from the retained Elmina example described below. The first live KL source import remains blocked by the running cloud's download allowlist; no invented KL source data is included.
+For the **Pasar Seni–Chinatown–Masjid Jamek primary pilot**, see [source acquisition and GIS review](pasar-seni-pilot.md) and the [included source assessment](../data/pasar-seni/README.md). The real user-supplied OSM export and 2026 DOSM population context are included, with compressed original downloads and checksums. Its data pipeline is separate from the retained Elmina example described below. `npm run data:rebuild` regenerates the KL bundle without network access to the source hosts.
 
 ## Included source
 

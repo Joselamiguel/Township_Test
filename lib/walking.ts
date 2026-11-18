@@ -59,6 +59,10 @@ export interface WalkingData {
     as_of: string;
 }
 
+export function placeSearchText(asset:WalkingAsset){
+    return [asset.name,asset.category,...['osm_name','name_ms','name_en','station_ref'].map(key=>asset.properties[key])].filter(value=>typeof value==='string').join(' ').toLowerCase();
+}
+
 export interface WalkingNeeds {
     step_free: boolean;
     max_slope_pct: number;

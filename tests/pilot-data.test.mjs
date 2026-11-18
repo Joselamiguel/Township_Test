@@ -6,12 +6,14 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pilotFixture } from './helpers/pilot-fixture.mjs';
 import { csvObjects } from '../lib/data/csv.ts';
-import { csvFile,gtfsFiles } from '../scripts/data-download.mjs';
+import { csvFile,gtfsFiles,importSourceFile } from '../scripts/data-download.mjs';
+import { gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { transitContext,railDemand,districtPopulation,wikidataLandmarks,satelliteScenes } from '../lib/data/context.ts';
 import { preparePilotGraph,mappedAssets } from '../lib/data/osm.ts';
 import { createPilotSnapshot,gisLayers } from '../scripts/pilot-snapshot.mjs';
 import { validatePilotSnapshot,writePublicPilot } from '../scripts/pilot-export.mjs';
-import { DEFAULT_NEEDS } from '../lib/walking.ts';
+import { DEFAULT_NEEDS,placeSearchText } from '../lib/walking.ts';
 import { planJourney } from '../lib/journeys.ts';
 import { withPersonalUpdates } from '../lib/walk-library.ts';
 import { pilotFromParams } from '../lib/pilots.ts';
@@ -51,6 +53,51 @@ test('known conflicting levels are excluded from a geometric facility connection
     const prepared=preparePilotGraph(graph,osm,'pasar-seni');
     const assets=mappedAssets({elements:[{type:'node',id:999,lat:3.1425,lon:101.6945,tags:{amenity:'bench',level:'-1'}}]},prepared.edges.map(e=>({...e,level:'1'})),'pasar-seni');
     assert.equal(assets[0].edge_id,null);
+});
+test('station references and original-language names remain discoverable without replacing source names',()=>{
+    const {graph,osm}=fixture,source=structuredClone(osm);
+    const station=source.elements.find(e=>e.tags?.railway==='station');
+    Object.assign(station.tags,{name:'Test stesen asal','name:en':'Test station','name:ms':'Test stesen',ref:'TEST16'});
+    const assets=mappedAssets(source,preparePilotGraph(graph,source,'pasar-seni').edges,'pasar-seni');
+    const imported=assets.find(a=>a.kind==='transit');
+    assert.equal(imported.name,'Test station · TEST16');
+    assert.ok(placeSearchText(imported).includes('test stesen asal'));assert.ok(placeSearchText(imported).includes('test16'));
+});
+test('mapped building hours apply to its entrance and remain unverified',()=>{
+    const {graph,osm}=fixture,source=structuredClone(osm);
+    source.elements.find(e=>e.tags?.amenity==='clinic').tags.opening_hours='Mo-Su 10:00-22:00';
+    const bundle=createPilotSnapshot(graph,source);
+    const clinic=bundle.walking.assets.find(a=>a.name==='Test clinic');
+    const door=bundle.walking.assets.find(a=>a.parent_id===clinic.id);
+    assert.equal(door.properties.opening_hours,'Mo-Su 10:00-22:00');assert.equal(door.properties.opening_hours_source,clinic.source_ref);
+    const request={origin:[3.1425,101.694],destination:clinic,profile:'senior',needs:DEFAULT_NEEDS,departure_at:'2026-11-19T01:00:00Z'};
+    assert.equal(planJourney(bundle.graph.nodes,bundle.graph.edges,bundle.walking,request).recommended,null);
+    const plan=planJourney(bundle.graph.nodes,bundle.graph.edges,bundle.walking,{...request,departure_at:'2026-11-19T04:00:00Z'});
+    assert.equal(plan.routes.direct.suitability,'yellow');assert.deepEqual(bundle.walking.verifications,[]);
+});
+test('featured places include different pilot landmarks before businesses named after one landmark',()=>{
+    const {graph,osm}=fixture,source=structuredClone(osm);
+    const point=(id,name,extra={})=>({type:'node',id,lat:3.1425,lon:101.6957,tags:{tourism:'attraction',name,...extra}});
+    source.elements.push(point(990000009001,'Central Market'),point(990000009002,'Pasar Seni'),point(990000009003,'Petaling Street'),
+        point(990000009004,'Jamek Mosque',{'name:ms':'Masjid Jamek Kuala Lumpur'}),...Array.from({length:12},(_,i)=>point(990000009100+i,`Central Market business ${i}`)));
+    const bundle=createPilotSnapshot(graph,source);
+    const names=bundle.context.featured_ids.map(id=>bundle.walking.assets.find(a=>a.id===id)?.name);
+    assert.deepEqual(names.slice(0,4),['Central Market','Pasar Seni','Petaling Street','Jamek Mosque']);
+});
+test('compressed supplied sources preserve original hashes and support a fully offline import',async t=>{
+    const dir=await mkdtemp(join(tmpdir(),'township-offline-import-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+    const payload=JSON.stringify(fixture.osm),compressed=gzipSync(payload),input=join(dir,'osm.json.gz'),decoded=join(dir,'decoded.json');
+    await writeFile(input,compressed);
+    const meta=await importSourceFile(input,decoded);
+    assert.equal(meta.sha256,createHash('sha256').update(payload).digest('hex'));assert.equal(await readFile(decoded,'utf8'),payload);
+    assert.equal(meta.archive_sha256,createHash('sha256').update(compressed).digest('hex'));
+    const bad=join(dir,'bad.gz');await writeFile(bad,'not a gzip source');await assert.rejects(()=>importSourceFile(bad,decoded));assert.equal(await readFile(decoded,'utf8'),payload);
+    const population=join(dir,'population.csv.gz');await writeFile(population,gzipSync('state,district,date,sex,age,ethnicity,population\nW.P. Kuala Lumpur,W.P. Kuala Lumpur,2026-01-01,both,overall,overall,2082.3\nW.P. Kuala Lumpur,W.P. Kuala Lumpur,2026-01-01,both,65-69,overall,52.3\n'));
+    const out=join(dir,'out');execFileSync(process.execPath,['scripts/refresh-pilot.mjs','--offline','--osm-file',input,'--population-file',population,'--out',out,'--raw-dir',join(dir,'raw')]);
+    const bundle=JSON.parse(await readFile(join(out,'bundle.json'),'utf8'));validatePilotSnapshot(bundle);
+    assert.equal(bundle.context.demographics.population,2082300);
+    assert.ok(bundle.context.sources.filter(s=>!['osm','dosm'].includes(s.id)).every(s=>s.status==='not_loaded'));
+    assert.deepEqual(bundle.walking.verifications,[]);assert.equal(bundle.context.sources.find(s=>s.id==='osm').sha256,meta.sha256);
 });
 test('mapped destinations route with uncertainty; a mapped bench cannot fulfil a required checked rest',()=>{
     const {bundle}=fixture;const destination=bundle.walking.assets.find(a=>a.name==='Test Central Market');

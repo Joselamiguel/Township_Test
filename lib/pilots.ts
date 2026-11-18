@@ -11,7 +11,7 @@ export const PILOTS = {
         description: 'Discover places, facilities and pedestrian connections around the stations and heritage streets.',
         bounds: [3.133, 101.685, 3.157, 101.708] as [number, number, number, number],
         centre: [3.1425, 101.6955] as [number, number], origin_label: 'Pasar Seni walking start', edge_offset: 1000000000, asset_offset: 2000000000,
-        role: 'pilot', district: 'W.P. Kuala Lumpur', preferred_names: ['Central Market', 'Pasar Seni', 'Petaling Street', 'Masjid Jamek', 'Dataran Merdeka'],
+        role: 'pilot', district: 'W.P. Kuala Lumpur', preferred_names: ['Central Market', 'Pasar Seni', 'Petaling Street', 'Masjid Jamek', 'Jamek Mosque', 'Dataran Merdeka'],
     },
     elmina: { id: 'elmina' as const, name: 'Elmina bridges example', short_name: 'Elmina example',
         description: 'Learn the planner with the original two mapped bridge destinations.',
