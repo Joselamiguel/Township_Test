@@ -13,7 +13,7 @@ export function evidenceFor(
         for (const [field, value] of Object.entries(record.attributes)) {
             if (result[field]) continue;
             const current = record.valid_until && Date.parse(record.valid_until) > instant;
-            result[field] = { value, status: record.status === 'verified' && !current ? 'stale' : record.status,
+            result[field] = { value, status: (record.status === 'verified' && !current) || (record.valid_until && !current) ? 'stale' : record.status,
                 observed_at: record.observed_at, valid_until: record.valid_until, reviewer: record.reviewer,
                 method: record.method, record_id: record.id };
         }

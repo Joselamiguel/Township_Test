@@ -26,4 +26,6 @@ assert.ok(graph.edges.every(e => e.pedestrian_access === true && e.kind !== 'str
 assert.equal(data.verifications.length, 0, 'The public source build must never publish local observations.');
 assert.equal(data.assets.filter(a => a.kind === 'destination').length, 2);
 await access(new URL('.nojekyll', out));
+await access(new URL('offline-walks.html', out));
+await access(new URL('walk-offline-worker.js', out));
 console.log(`Static app checked: HTML, CSS, JavaScript and ${graph.edges.length} pedestrian edges under ${prefix || '/'}.`);
