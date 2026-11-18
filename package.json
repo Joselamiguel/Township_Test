@@ -17,6 +17,7 @@
     "db:migrate": "node scripts/database.mjs migrate",
     "db:seed": "node scripts/database.mjs seed",
     "data:refresh": "node scripts/refresh-pilot.mjs",
+    "data:rebuild": "node scripts/refresh-pilot.mjs --offline --osm-file data/pasar-seni/source/pasar-seni-osm.json.gz --population-file data/pasar-seni/source/population_district.csv.gz",
     "gis:export": "node scripts/export-gis.mjs",
     "build": "node scripts/build-planning-worker.mjs && next build",
     "build:pages": "node scripts/build-pages.mjs",

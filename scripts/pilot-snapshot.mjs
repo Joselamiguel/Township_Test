@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { PILOTS } from '../lib/pilots.ts';
 import { mappedAssets,preparePilotGraph,networkCoverage,pilotOrigin } from '../lib/data/osm.ts';
 import { transitContext,railDemand,districtPopulation,wikidataLandmarks,satelliteScenes } from '../lib/data/context.ts';
+import { placeSearchText } from '../lib/walking.ts';
 
 export function createPilotSnapshot(rawGraph,osm,inputs={},now=new Date().toISOString()){
     const area='pasar-seni';
@@ -10,10 +11,17 @@ export function createPilotSnapshot(rawGraph,osm,inputs={},now=new Date().toISOS
     const assets=mappedAssets(osm,graph.edges,area).sort((a,b)=>Number(a.parent_id!==null)-Number(b.parent_id!==null)||Number(a.id)-Number(b.id));
     const origin=pilotOrigin(graph.nodes,graph.edges,area),{coverage,component,largest}=networkCoverage(graph.nodes,graph.edges,assets);
     const destinations=assets.filter(a=>a.kind==='destination'||a.kind==='transit');
-    const featured=destinations.filter(a=>assets.some(e=>e.parent_id===a.id&&e.edge_id!==null&&component.get(graph.edges.find(p=>p.id===e.edge_id)?.from_node)===largest))
-        .sort((a,b)=>{
-            const score=a=>{const name=a.name.toLowerCase();const match=PILOTS[area].preferred_names.findIndex(n=>name.includes(n.toLowerCase()));return match<0?100:match;};return score(a)-score(b)||a.name.localeCompare(b.name);
-        }).slice(0,8).map(a=>a.id);
+    const connected=destinations.filter(a=>assets.some(e=>e.parent_id===a.id&&e.edge_id!==null&&component.get(graph.edges.find(p=>p.id===e.edge_id)?.from_node)===largest));
+    const selected=[];
+    // Give each pilot landmark a turn before businesses whose names mention it.
+    for(const preferred of PILOTS[area].preferred_names){
+        const key=preferred.toLowerCase(),matches=connected.filter(a=>placeSearchText(a).includes(key));
+        const quality=a=>[a.name,a.properties.osm_name,a.properties.name_en,a.properties.name_ms].some(n=>typeof n==='string'&&n.toLowerCase()===key)?0:1;
+        matches.sort((a,b)=>quality(a)-quality(b)||a.name.length-b.name.length||a.name.localeCompare(b.name));
+        const best=matches.find(a=>!selected.includes(a.id));if(best)selected.push(best.id);
+    }
+    const cultural=a=>a.kind==='transit'||a.category==='park'||['attraction','museum','gallery'].includes(String(a.properties.tourism_type));
+    const featured=[...selected,...connected.filter(a=>!selected.includes(a.id)).sort((a,b)=>Number(cultural(b))-Number(cultural(a))||a.name.localeCompare(b.name)).map(a=>a.id)].slice(0,8);
     const id=createHash('sha256').update(JSON.stringify({nodes:graph.nodes,edges:graph.edges,assets})).digest('hex');
     const transit={stops:[],routes:[],service_dates:[]};
     for(const [agency,files]of Object.entries(inputs.gtfs??{})){const part=transitContext(files,agency,area);transit.stops.push(...part.stops);transit.routes.push(...part.routes);transit.service_dates.push(...part.service_dates);}

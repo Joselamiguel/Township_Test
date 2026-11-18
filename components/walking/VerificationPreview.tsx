@@ -4,6 +4,7 @@ import { useRouter,useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { loadWalkingData,loadPilotContext } from '@/lib/api';
 import type { WalkingData } from '@/lib/walking';
+import { placeSearchText } from '@/lib/walking';
 import PreviewNotice from './PreviewNotice';
 import { useClientReady } from '@/lib/use-client-ready';
 import { pilotFromParams,isPilotAvailable,type PilotContext,type PilotId,PILOTS } from '@/lib/pilots';
@@ -18,7 +19,7 @@ function PreviewContent({area}:{area:PilotId}) {
     const [query,setQuery]=useState(''),[kind,setKind]=useState('all'),[limit,setLimit]=useState(24);
     const [error, setError] = useState('');
     useEffect(() => { Promise.all([loadWalkingData(area),loadPilotContext(area)]).then(([d,c])=>{setData(d);setContext(c);}).catch(() => setError('The mapped places could not be loaded. Please reload this page.')); }, [area]);
-    const shown=data?.assets.filter(a=>(kind==='all'||a.kind===kind)&&(!query||a.name.toLowerCase().includes(query.toLowerCase())))??[];
+    const shown=data?.assets.filter(a=>(kind==='all'||a.kind===kind)&&(!query||placeSearchText(a).includes(query.toLowerCase())))??[];
     return <main className="min-h-screen bg-slate-50 px-4 py-8 font-sans text-slate-900">
         <div className="mx-auto max-w-3xl space-y-6">
             <h1 className="text-3xl font-extrabold">Mapped places and verification coverage</h1>

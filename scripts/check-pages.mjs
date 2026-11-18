@@ -36,11 +36,13 @@ if(!klReady){
     assert.ok(home.includes('Central KL pilot · data pending'),'The public site must explain the pending KL source.');
     assert.ok(!home.includes('Discover central KL on foot'),'Do not advertise unavailable KL routing.');
 }
+const areaCounts=[];
 for(const area of metadata.areas){
     const read=async name=>JSON.parse(await readFile(new URL(`pilot/${area}/${name}.json`,out),'utf8'));
     const context=await read('context');assert.equal(context.area_id,area);
+    const areaGraph=await read('graph');areaCounts.push(`${area}: ${areaGraph.edges.length} pedestrian segments`);
     if(area==='pasar-seni'){
-        validatePilotSnapshot({area_id:area,graph:await read('graph'),walking:await read('walking-data'),hazards:await read('hazards'),reports:await read('reports'),context});
+        validatePilotSnapshot({area_id:area,graph:areaGraph,walking:await read('walking-data'),hazards:await read('hazards'),reports:await read('reports'),context});
         for(const name of ['paths','places','transit','satellite']){
             const layer=JSON.parse(await readFile(new URL(`pilot/${area}/gis/${name}.geojson`,out),'utf8'));
             assert.equal(layer.type,'FeatureCollection');
@@ -53,4 +55,4 @@ assert.ok(entry.includes('./planning-dispatch.js'),'The planning worker needs br
 await access(new URL('.nojekyll', out));
 await access(new URL('offline-walks.html', out));
 await access(new URL('walk-offline-worker.js', out));
-console.log(`Static app checked: HTML, CSS, JavaScript and ${graph.edges.length} pedestrian edges under ${prefix || '/'}.`);
+console.log(`Static app checked: HTML, CSS, JavaScript and ${areaCounts.join('; ')} under ${prefix || '/'}.`);

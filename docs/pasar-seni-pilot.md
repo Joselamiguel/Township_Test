@@ -2,6 +2,8 @@
 
 The primary area is **Pasar Seni–Chinatown–Masjid Jamek**. The original two Elmina bridge destinations remain a separate, labelled example. Use the Walking area selector, `/resident?area=pasar-seni` or `/resident?area=elmina`; old links containing an Elmina bridge identifier still open the example.
 
+The first real OSM and DOSM source files are now included. See the [source assessment and coverage counts](../data/pasar-seni/README.md). Use `npm run data:rebuild` to reproduce this version from the compressed original downloads, without external data requests. Additional transit, demand, Wikidata and satellite feeds remain explicitly not loaded.
+
 ## Source acquisition
 
 No account, hosted database subscription or paid map/routing API is needed. Imports are explicit maintenance commands, not a download every time someone plans a walk.
@@ -32,6 +34,8 @@ Raw downloads stay in ignored `.local/sources/pasar-seni/`. Review generated `da
 
 For a supplied Overpass `out body geom` file use `npm run data:refresh -- --osm-file /path/to/source.json --osm-date YYYY-MM-DDTHH:mm:ssZ`. Optional `--gtfs-rail-file`, `--gtfs-bus-file`, `--gtfs-feeder-file`, `--population-file`, `--ridership-file`, `--wikidata-file` and `--satellite-file` accept original downloaded files. `--reuse` explicitly selects cached files; missing cache entries are not silently represented as fresh downloads. `--ridership-year YYYY` selects an annual OD file when needed.
 
+Add `--offline` to use supplied files without attempting any external downloads. Sources not supplied are marked `not_loaded`. Supplied JSON/CSV files can be losslessly gzipped (`.gz`); the importer retains both the decompressed-content and archive SHA-256 hashes. Population CSVs are streamed and filtered to the district before context calculations. `--raw-dir` can select a separate working cache for an isolated import.
+
 For repeatable larger OSM imports, install the free `osmium-tool`, download the [Geofabrik Malaysia/Singapore/Brunei extract](https://download.geofabrik.de/asia/malaysia-singapore-brunei.html), then run `npm run data:refresh -- --geofabrik-pbf /path/to/extract.osm.pbf --osm-date ORIGINAL_EXTRACT_DATE`. `--fetch-geofabrik` downloads the regional PBF instead. This alternative is optional; normal Overpass imports do not need osmium.
 
 ## Spatial rules and QGIS
@@ -60,4 +64,4 @@ Place search uses imported names locally, without a public geocoder/autocomplete
 
 Automated tests use **clearly labelled synthetic fixtures in temporary directories/databases**, separate from production source files. They check entrance associations, direction restrictions, disconnected networks, CSV/GTFS parsing, population units, source privacy and cross-area writes. Existing Elmina routes remain tested against the actual included OSM snapshot.
 
-The initial live KL snapshot is pending the cloud download-domain update, as recorded in `data/pasar-seni/README.md`. A normal Pages build can deploy the actual Elmina example while KL data is missing: Elmina becomes the default, KL is labelled data pending and disabled in the selector, and explicit KL links explain its status without requesting missing files. Adding a validated real bundle enables KL as the default automatically. Malformed or private source data still stops the build. Never deploy synthetic test fixtures as the pilot. Local `--example-only` validation remains available, but is not needed for normal CI and is refused in GitHub Actions.
+The included real KL bundle enables the pilot as the Pages default. Tests exercise actual landmark routes, source/archive hashes, mapped venue hours, unverified rests and district population units, alongside the isolated synthetic edge cases. Optional external feeds remain not loaded until acquired. If a future checkout lacks the KL bundle, Pages can still deploy the actual Elmina example: KL is labelled data pending and disabled, and explicit KL links explain its status without requesting missing files. Malformed or private source data still stops the build. Never deploy synthetic test fixtures as the pilot. Local `--example-only` validation remains available and is refused in GitHub Actions.

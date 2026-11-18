@@ -4,7 +4,7 @@ A pedestrian walking planner and footpath maintenance dashboard. Residents can c
 
 The app now runs on **Next.js → API routes → PostgreSQL/PostGIS**. It uses free, open-source software and the included OpenStreetMap snapshot. No hosted database account, API key or database subscription is required for local development.
 
-The new primary study area is **Pasar Seni–Chinatown–Masjid Jamek**, with **Elmina bridges retained as an example**. Area selection, source importers, provenance/coverage panels, GTFS/context adapters and GIS exports are included. **The initial real KL snapshot is pending the cloud network-domain update. Until it is imported, Pages builds the working Elmina example and clearly labels KL as data pending.** KL becomes the default only when a validated real bundle is included. See [pilot setup and QGIS review](docs/pasar-seni-pilot.md).
+The primary study area is **Pasar Seni–Chinatown–Masjid Jamek**, with **Elmina bridges retained as an example**. The included real KL snapshot has **5,142 pedestrian segments, 2,090 places and 153 mapped facilities**, plus **2026 DOSM district population context**. Source dates, hashes and original downloads are retained. These are mapped features, with no invented field verification records. See [pilot setup and QGIS review](docs/pasar-seni-pilot.md).
 
 The public [GitHub Pages site](https://roshanm75.github.io/Township_Test/) is an **interactive preview** of the walking planner, built from the included OSM snapshot. Explore, Plan, Walk and Saved provide personal needs, return walks, facility discovery, condition timelines, device walk history, comfort feedback, personal pace suggestions, offline packs and private condition reports. Shared maintenance reports and verification edits need the full server version below. See the [GitHub Pages deployment guide](docs/github-pages.md) and [everyday walking tools guide](docs/everyday-walking-tools.md).
 
@@ -16,7 +16,7 @@ npm run build:pages
 npm run preview:pages
 ```
 
-The Pages build generates actual HTML/CSS/JavaScript in `out/`, with the `/Township_Test/` prefix and public source data. It never reads or exports the local database, or depends on live data-download services during CI. Missing KL data leaves that pilot disabled; corrupt or private source data still stops the build. To enable KL, run `npm run data:refresh` with the source domains allowed, review and commit the generated bundle, then rebuild. `npm run build` continues to build the full server application.
+The Pages build generates actual HTML/CSS/JavaScript in `out/`, with the `/Township_Test/` prefix and public source data. It never reads or exports the local database, or depends on live data-download services during CI. The committed KL bundle enables the pilot by default; Elmina remains selectable. `npm run data:rebuild` reproduces the bundle from the included compressed downloads without external requests. Missing KL data leaves that pilot disabled; corrupt or private source data still stops the build. `npm run build` continues to build the full server application.
 
 ## Local setup
 

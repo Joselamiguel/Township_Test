@@ -21,6 +21,7 @@ import { normaliseNeeds } from '@/lib/journeys';
 import { malaysiaHour } from '@/lib/verification';
 import { forecastAt, type WalkingWeather } from '@/lib/comfort';
 import type { WalkingData, WalkingAsset, JourneyPlan } from '@/lib/walking';
+import { placeSearchText } from '@/lib/walking';
 import RouteQualityBar from '@/components/walking/RouteQualityBar';
 import WalkingRequirements from '@/components/walking/WalkingRequirements';
 import DepartureControl from '@/components/walking/DepartureControl';
@@ -451,7 +452,7 @@ function ResidentPageContent() {
     const journeySearch=usePlannerResult<JourneyPlan>(planningSnapshot,returning?{type:'return',input:toolRequest,feels_like:forecast?.feels_like_c}:destination?{
         type:'journey',input:{...toolRequest,destination,entrance_id:entranceId||undefined},feels_like:forecast?.feels_like_c}:null);
     const plan=journeySearch.result;
-    const matchingPlaces=useMemo(()=>places.filter(a=>!placeQuery||`${a.name} ${a.category}`.toLowerCase().includes(placeQuery.toLowerCase()))
+    const matchingPlaces=useMemo(()=>places.filter(a=>!placeQuery||placeSearchText(a).includes(placeQuery.toLowerCase()))
         .sort((a,b)=>{const rank=(id:string)=>{const index=pilotData?.featured_ids.indexOf(id)??-1;return index<0?100:index;};return rank(a.id)-rank(b.id)||a.name.localeCompare(b.name);}),[places,placeQuery,pilotData]);
     const shownPlaces=matchingPlaces.slice(0,placeLimit);
     const mapAssets=useMemo(()=>walkingData?.assets.filter(a=>['rest','toilet','water','shelter','transit'].includes(a.kind)||(a.kind==='entrance'&&a.parent_id===destination?.id))
