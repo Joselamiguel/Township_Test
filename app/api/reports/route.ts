@@ -1,12 +1,13 @@
 import { createReport, readReports } from '@/lib/server/repository';
 import { apiError, json, readJson } from '@/lib/server/http';
 import { RequestError, validateReport } from '@/lib/server/validation';
+import { requestArea } from '@/lib/server/pilots';
 
 export async function GET(request: Request) {
     try {
         const status = new URL(request.url).searchParams.get('status') ?? 'open';
         if (!['open', 'all'].includes(status)) throw new RequestError('Status must be open or all.');
-        return json({ reports: await readReports(status === 'all') });
+        return json({ reports: await readReports(status === 'all',requestArea(request)) });
     } catch (error) { return apiError(error); }
 }
 

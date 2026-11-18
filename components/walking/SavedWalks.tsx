@@ -8,6 +8,7 @@ import { routeSketch } from '@/lib/walk-timeline';
 import { sitePath, IS_PAGES_PREVIEW } from '@/lib/site';
 import PaceCalibration from './PaceCalibration';
 import WalkFeedback from './WalkFeedback';
+import { PILOTS } from '@/lib/pilots';
 
 export default function SavedWalks({ library, profile, pace, onChange, onReplan, onFeedback, onUsePace, onShare }: { library: WalkLibrary; profile: Profile; pace: number | null;
     onChange: (library: WalkLibrary) => boolean; onReplan: (pack: WalkPack) => void; onFeedback: (id: string, value: Feedback) => boolean; onUsePace: (speed: number) => void; onShare: (value: ConditionUpdate) => Promise<boolean> }) {
@@ -20,7 +21,7 @@ export default function SavedWalks({ library, profile, pace, onChange, onReplan,
     }
     if (pack) { const sketch=routeSketch(pack.route.coordinates);return <div className="tg-stack">
         <button className="tg-btn" onClick={() => setSelected(null)}>Back to Saved</button><h1 className="tg-h2">{pack.title}</h1>
-        <p className="tg-note tg-warnbox">Saved snapshot · {new Date(pack.saved_at).toLocaleDateString('en-MY')}. Recheck conditions before setting out. A saved route rating does not establish current conditions.</p>
+        <p className="tg-note tg-warnbox">{PILOTS[pack.area_id??'elmina'].short_name} · saved snapshot · {new Date(pack.saved_at).toLocaleDateString('en-MY')}. Recheck conditions before setting out. A saved route rating does not establish current conditions.</p>
         <p className="tg-small">Network snapshot: {pack.network_snapshot_at ? new Date(pack.network_snapshot_at).toLocaleDateString('en-MY') : 'date not provided'}. Condition records loaded: {new Date(pack.data_at).toLocaleDateString('en-MY')}; individual observations retain their own dates.</p>
         <svg viewBox="0 0 600 340" role="img" aria-label="Saved route sketch, north is up" className="w-full rounded-xl bg-[#e9eee6]"><polyline points={sketch.points} fill="none" stroke="#a4262c" strokeWidth={5} /><circle cx={sketch.start[0]} cy={sketch.start[1]} r={7} fill="#166534" /></svg>
         <p className="tg-small">{Math.ceil(pack.route.total_min)} min estimated · {Math.round(pack.route.length_m)} m · {pack.route.rest_min} min planned rest. Route sketch: © OpenStreetMap contributors, ODbL.</p>

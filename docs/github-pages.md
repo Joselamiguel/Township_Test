@@ -23,6 +23,8 @@ The default `npm run dev` / `npm run build` / `npm start` application retains it
 
 ## Build locally
 
+The build always retains the actual Elmina source example. KL is enabled and becomes the default when a reviewed, valid `data/pasar-seni/bundle.json` is present. If that file is missing, the production build succeeds with Elmina as default and clearly labels KL as data pending; direct KL links show an explanation instead of requesting missing JSON. A malformed or private bundle still fails validation. The initial KL import needs the cloud network-domain change followed by `npm run data:refresh`; see [pilot setup](pasar-seni-pilot.md). Do not deploy test fixtures as the pilot.
+
 Use Node.js 24 and the existing lockfile:
 
 ```bash
@@ -34,7 +36,7 @@ npm run preview:pages
 
 `build:pages` imports the supplied `precinct.json` with the existing strict pedestrian importer, creates public snapshot files under the ignored `public/pilot/` directory, then builds Next.js with `output: 'export'`. Pages/layouts use `.tsx`; the Pages-only `pageExtensions` setting excludes server `.ts` API handler entry points from this build. The full server build uses the original extensions and keeps its APIs. No source files are renamed or deleted to switch modes.
 
-The script sets `NEXT_PUBLIC_SITE_MODE=pages` and `NEXT_PUBLIC_BASE_PATH=/Township_Test`. In GitHub Actions the repository name determines the prefix; a repository named `owner.github.io` uses the domain root. To test a different prefix, provide `NEXT_PUBLIC_BASE_PATH` to the build command (an empty value builds for the root). These are public build settings, not database credentials. Changing them requires rebuilding.
+The script sets `NEXT_PUBLIC_SITE_MODE=pages` and `NEXT_PUBLIC_BASE_PATH=/Township_Test`. It derives `NEXT_PUBLIC_KL_PILOT_AVAILABLE` from the validated bundle and records available areas/default/status in `out/site-config.json`; no manual availability variable is needed in GitHub settings. In GitHub Actions the repository name determines the prefix; a repository named `owner.github.io` uses the domain root. To test a different prefix, provide `NEXT_PUBLIC_BASE_PATH` to the build command (an empty value builds for the root). These are public build settings, not database credentials. Changing them requires rebuilding.
 
 Next.js prefixes links and assets, and the snapshot provider prefixes JSON requests. `trailingSlash` exports deep links such as `resident/index.html`; `.nojekyll` protects underscore assets if the output is hosted with a branch-based static server. The planning clock follows the visitor's current time rather than the snapshot's build time.
 

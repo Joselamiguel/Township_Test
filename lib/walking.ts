@@ -1,4 +1,5 @@
 import type { Mode, Profile, RouteResult } from './routing.ts';
+import type { PilotId } from './pilots.ts';
 
 export type VerificationTarget = 'path' | 'crossing' | 'entrance' | 'facility';
 export type VerificationState = 'verified' | 'reported' | 'unverified' | 'stale';
@@ -51,6 +52,8 @@ export interface WalkingAsset {
 }
 
 export interface WalkingData {
+    area_id?: PilotId;
+    dataset_id?: string;
     assets: WalkingAsset[];
     verifications: VerificationRecord[];
     as_of: string;

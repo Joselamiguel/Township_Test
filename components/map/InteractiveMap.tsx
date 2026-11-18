@@ -6,7 +6,7 @@ import type { ReportMarker } from '@/lib/types';
 import type { WalkingAsset, VerificationRecord } from '@/lib/walking';
 import type { PathEdge } from '@/lib/routing';
 import { environmentSegments, environmentCoverage, type EnvironmentLayer } from '@/lib/environment';
-import { DEFAULT_ORIGIN, DESTINATIONS } from '@/lib/precinct';
+import { DEFAULT_ORIGIN } from '@/lib/precinct';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -269,7 +269,7 @@ export default function InteractiveMap({
     activeRouteId = '',
     reports = [],
     startCoords = DEFAULT_ORIGIN,
-    endCoords = DESTINATIONS[0].coords,
+    endCoords: requestedEndCoords,
     startLabel = 'Start',
     reduceMotion = false,
     highContrast = false,
@@ -287,6 +287,8 @@ export default function InteractiveMap({
     focusLocation,
     liveLocation,
 }: InteractiveMapProps) {
+    const endCoords=requestedEndCoords??startCoords;
+    const hasDestination=Boolean(requestedEndCoords);
     const brand = highContrast ? BRAND_HC : BRAND;
     const overview = pins !== undefined;
     const [localLayer, setLocalLayer] = useState<EnvironmentLayer | 'routes'>('routes');
@@ -318,12 +320,12 @@ export default function InteractiveMap({
         return [...groups.values()].map((g) => {
             const here = L.latLng(g.lat, g.lng);
             const nearStart = here.distanceTo(L.latLng(startCoords)) < NEAR_M;
-            const nearEnd = here.distanceTo(L.latLng(endCoords)) < NEAR_M;
+            const nearEnd = hasDestination&&here.distanceTo(L.latLng(endCoords)) < NEAR_M;
             const dx = nearStart ? SHIFT_PX : nearEnd ? -SHIFT_PX : 0; // start: pin goes left, destination: pin goes right
             const label = g.items.length > 1 ? `${g.items.length} problems` : 'Problem';
             return { ...g, label, icon: makePin('hazard', label, brand, dx) };
         });
-    }, [overview, reports, startCoords, endCoords, brand]);
+    }, [overview, reports, startCoords, endCoords, hasDestination, brand]);
 
     // Draw the chosen route last so it sits on top
     const ordered = useMemo(
@@ -351,7 +353,7 @@ export default function InteractiveMap({
     const routeCoords = activeRoute?.coordinates ?? [];
     const fitSignature = overview
         ? `o:${(pins ?? []).map((p) => `${p.id}@${p.lat},${p.lng}`).join('|')}`
-        : `w:${activeRoute?.id}:${routeCoords.length}:${routeCoords[0]?.join(',')}:${routeCoords[routeCoords.length - 1]?.join(',')}:${startCoords.join(',')}:${endCoords.join(',')}`;
+        : `w:${activeRoute?.id}:${routeCoords.length}:${routeCoords[0]?.join(',')}:${routeCoords[routeCoords.length - 1]?.join(',')}:${startCoords.join(',')}:${hasDestination?endCoords.join(','):'no destination'}`;
 
     const fitPoints = useMemo<[number, number][]>(() => {
         if (overview) {
@@ -359,7 +361,7 @@ export default function InteractiveMap({
             return list.length > 0 ? list : [startCoords];
         }
         const list: [number, number][] = routeCoords.length > 1 ? [...routeCoords] : [];
-        list.push(startCoords, endCoords);
+        list.push(startCoords);if(hasDestination)list.push(endCoords);
         return list;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fitSignature]);
@@ -503,11 +505,11 @@ export default function InteractiveMap({
                             </Marker>
                         ))}
 
-                        <Marker position={endCoords} icon={endIcon} zIndexOffset={900} eventHandlers={{ add: ariaLabelOnAdd('Destination') }}>
+                        {hasDestination&&<Marker position={endCoords} icon={endIcon} zIndexOffset={900} eventHandlers={{ add: ariaLabelOnAdd('Destination') }}>
                             <Popup {...popupProps}>
                                 <div style={{ ...popupText, fontWeight: 800 }}>Where you are going</div>
                             </Popup>
-                        </Marker>
+                        </Marker>}
 
                         <Marker position={startCoords} icon={startIcon} zIndexOffset={1000} eventHandlers={{ add: ariaLabelOnAdd(startLabel) }}>
                             <Popup {...popupProps}>

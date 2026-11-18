@@ -352,8 +352,8 @@ export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingD
 }
 
 export function reachablePlaces(nodes: PathNode[], edges: PathEdge[], data: WalkingData,
-    request: Omit<PlanningInput, 'destination'>, hazards: HazardReport[] = []) {
-    return data.assets.filter(a => ['destination', 'transit', 'toilet', 'water'].includes(a.kind)).map(destination => {
+    request: Omit<PlanningInput, 'destination'>, hazards: HazardReport[] = [],ids?:string[]) {
+    return data.assets.filter(a => ['destination', 'transit', 'toilet', 'water'].includes(a.kind)&&(!ids||ids.includes(a.id))).map(destination => {
         const plan = planJourney(nodes, edges, data, { ...request, destination }, hazards, null, ['direct']);
         const route = plan.recommended ? plan.routes[plan.recommended]! : null;
         return { destination, route, reasons: plan.reasons };

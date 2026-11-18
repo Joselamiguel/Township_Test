@@ -22,6 +22,7 @@ export interface PathNode {
 }
 
 export interface PathEdge {
+    foot_direction?: 'both' | 'forward' | 'backward';
     id: number;
     from_node: number;
     to_node: number;
@@ -162,8 +163,8 @@ export function buildGraph(nodes: PathNode[], edges: PathEdge[]): Graph {
         };
 
         em.set(id, cleanEdge);
-        link(from_node, cleanEdge, to_node);
-        if (to_node !== from_node) link(to_node, cleanEdge, from_node);
+        if (cleanEdge.foot_direction !== 'backward') link(from_node, cleanEdge, to_node);
+        if (to_node !== from_node && cleanEdge.foot_direction !== 'forward') link(to_node, cleanEdge, from_node);
     }
 
     return { nodes: nm, edges: em, adj };

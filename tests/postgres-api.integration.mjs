@@ -7,6 +7,8 @@ import net from 'node:net';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import { LOCAL_DATABASE_URL } from '../lib/server/postgres.ts';
+import { pilotFixture } from './helpers/pilot-fixture.mjs';
+import { seedPilotArea } from '../scripts/seed-pilot-area.mjs';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -195,6 +197,41 @@ test('Next.js APIs with real PostgreSQL/PostGIS', { timeout: 60000 }, async (t) 
             assert.equal((await save({...observation,target_id:'999999'})).status,404);
             const facility=(await request('/api/walking-data')).body.assets.find(a=>a.kind==='rest');
             assert.equal((await save({...observation,kind:'seat_unavailable',target_type:'facility',target_id:facility.id})).status,201);
+        });
+        await t.test('pilot imports preserve the example and isolate graph, reports and verification targets',async()=>{
+            assert.equal((await request('/api/graph?area=unknown')).status,400);
+            assert.equal((await request('/api/weather?area=unknown')).status,400);
+            assert.equal((await request('/api/pilot-context?area=pasar-seni')).status,503);
+            assert.equal((await request('/api/walking-data?area=pasar-seni')).status,503);
+            const before=(await request('/api/walking-data?area=elmina')).body;
+            const {bundle}=pilotFixture();await seedPilotArea(fixture,bundle);await seedPilotArea(fixture,bundle);
+            const main=(await request('/api/graph?area=pasar-seni')).body;
+            assert.equal(main.edges.length,bundle.graph.edges.length);assert.equal(main.source.area_id,'pasar-seni');
+            assert.equal(main.source.dataset_id,bundle.context.dataset_id);
+            assert.equal((await request('/api/graph?area=elmina')).body.edges.length,2);
+            const context=(await request('/api/pilot-context?area=pasar-seni')).body;
+            assert.equal(context.coverage.destinations,bundle.context.coverage.destinations);
+            const walking=(await request('/api/walking-data?area=pasar-seni')).body;
+            assert.equal(walking.assets.length,bundle.walking.assets.length);assert.deepEqual(walking.verifications,[]);
+            assert.deepEqual((await request('/api/walking-data?area=elmina')).body.assets,before.assets);
+            const point={lat:3.1425,lng:101.6945,kind:'blocked',description:'Synthetic test report',area_id:'pasar-seni'};
+            const report=await post(point);assert.equal(report.status,201);
+            assert.equal((await request('/api/reports?area=pasar-seni')).body.reports.length,1);
+            assert.ok(!(await request('/api/reports?area=elmina')).body.reports.some(r=>r.id===report.body.report.id));
+            assert.equal((await post({...point,area_id:'elmina'})).status,422);
+            assert.equal((await request(`/api/reports/${report.body.report.id}/fix?area=elmina`,{method:'POST'})).status,404);
+            assert.equal((await request(`/api/reports/${report.body.report.id}/fix?area=pasar-seni`,{method:'POST'})).status,200);
+            const save=body=>request('/api/condition-updates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+            const update={kind:'blocked',target_type:'path',target_id:String(main.edges[0].id),observed_at:new Date().toISOString(),area_id:'elmina'};
+            assert.equal((await save(update)).status,404);
+            assert.equal((await save({...update,area_id:'pasar-seni'})).status,201);
+            const assets=body=>request('/api/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+            assert.equal((await assets({kind:'entrance',name:'Wrong area parent',parent_id:walking.assets.find(a=>a.kind==='destination').id,lat:3.1425,lng:101.6945,area_id:'elmina'})).status,404);
+            const changed=structuredClone(bundle);changed.context.dataset_id='changed';changed.graph.source.dataset_id='changed';changed.walking.dataset_id='changed';
+            await assert.rejects(()=>seedPilotArea(fixture,changed),/Another central KL dataset/);
+            const unchanged=(await request('/api/walking-data?area=elmina')).body;
+            assert.deepEqual(unchanged.verifications,before.verifications);
+            assert.equal((await request('/api/graph?area=pasar-seni')).body.source.dataset_id,bundle.context.dataset_id);
         });
         await t.test('database outages return 503 without exposing connection details', async () => {
             await fixture.end(); fixture = undefined;

@@ -4,6 +4,7 @@
 /node_modules
 /.local/
 /public/pilot/
+/public/planning-worker/
 /.pnp
 .pnp.*
 .yarn/*

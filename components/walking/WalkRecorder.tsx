@@ -56,7 +56,7 @@ export default function WalkRecorder({ session, onComplete, onFeedback, onPositi
     function finish() {
         const active = base + (paused ? 0 : Math.max(0, Date.now() - started));
         const result: CompletedWalk = { id: session.id, title: session.pack.title, started_at: session.started_at, finished_at: new Date().toISOString(),
-            profile: session.pack.profile, active_ms: active, track: trackRef.current, planned_m: session.pack.route.length_m, planned_min: session.pack.route.total_min, feedback: null };
+            profile: session.pack.profile,area_id:session.pack.area_id??'elmina', active_ms: active, track: trackRef.current, planned_m: session.pack.route.length_m, planned_min: session.pack.route.total_min, feedback: null };
         pause(); setGps(false); setConfirm(false); setCompleted(result);
         const ok = onComplete(result); setSaved(ok); if (ok) clearDraft();
     }

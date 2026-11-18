@@ -7,11 +7,11 @@ export function sitePath(path: string) {
     return `${BASE_PATH}${path}`;
 }
 
-export function dataPath(apiPath: string) {
-    if (!IS_PAGES_PREVIEW) return sitePath(apiPath);
+export function dataPath(apiPath: string,area?:'elmina'|'pasar-seni') {
+    if (!IS_PAGES_PREVIEW) return sitePath(area?`${apiPath}${apiPath.includes('?')?'&':'?'}area=${area}`:apiPath);
     const paths: Record<string, string> = { '/api/graph': 'graph', '/api/walking-data': 'walking-data',
-        '/api/hazards': 'hazards', '/api/reports': 'reports' };
+        '/api/hazards': 'hazards', '/api/reports': 'reports','/api/pilot-context':'context' };
     const name = paths[apiPath.split('?')[0]];
     if (!name) throw new Error('Shared updates are unavailable in the public preview.');
-    return sitePath(`/pilot/${name}.json`);
+    return sitePath(`/pilot/${area?`${area}/`:''}${name}.json`);
 }

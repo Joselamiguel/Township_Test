@@ -4,8 +4,9 @@ import type { ConditionUpdate } from '@/lib/walk-library';
 import type { PathEdge } from '@/lib/routing';
 import type { WalkingAsset } from '@/lib/walking';
 import { IS_PAGES_PREVIEW } from '@/lib/site';
+import type { PilotId } from '@/lib/pilots';
 
-export default function QuickConditionUpdate({ edges, facilities, onSave, onShare }: { edges: PathEdge[]; facilities: WalkingAsset[];
+export default function QuickConditionUpdate({ edges, facilities, onSave, onShare,area='elmina',dataset }: { edges: PathEdge[]; facilities: WalkingAsset[];area?:PilotId;dataset?:string;
     onSave: (value: ConditionUpdate) => boolean; onShare: (value: ConditionUpdate) => Promise<boolean> }) {
     const [kind, setKind] = useState<ConditionUpdate['kind']>('blocked');
     const [target, setTarget] = useState(''); const [notes, setNotes] = useState(''); const [message, setMessage] = useState(''); const [pending, setPending] = useState(false);
@@ -14,7 +15,7 @@ export default function QuickConditionUpdate({ edges, facilities, onSave, onShar
     async function save(shared: boolean) {
         const choice = choices.find(c => c.id === target); if (!choice) { setMessage('Choose the exact path or seat you observed.'); return; }
         const now = new Date().toISOString();
-        const update: ConditionUpdate = { id: crypto.randomUUID(), kind, target_type: choice.type, target_id: choice.id, name: choice.name,
+        const update: ConditionUpdate = { id: crypto.randomUUID(),area_id:area,dataset_id:dataset, kind, target_type: choice.type, target_id: choice.id, name: choice.name,
             observed_at: now, valid_until: new Date(Date.parse(now) + 86400000).toISOString(), notes: notes.trim() };
         if (!onSave(update)) { setMessage('The report could not be saved on this device.'); return; }
         if (!shared) { setMessage('Saved on this device as an unverified report. It has not been shared.'); return; }

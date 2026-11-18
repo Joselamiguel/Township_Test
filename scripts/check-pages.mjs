@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, access } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { validatePilotSnapshot } from './pilot-export.mjs';
 
 const out = new URL('../out/', import.meta.url);
 const metadata = JSON.parse(await readFile(new URL('site-config.json', out), 'utf8'));
@@ -25,6 +26,30 @@ assert.ok(graph.nodes.length && graph.edges.length);
 assert.ok(graph.edges.every(e => e.pedestrian_access === true && e.kind !== 'street'));
 assert.equal(data.verifications.length, 0, 'The public source build must never publish local observations.');
 assert.equal(data.assets.filter(a => a.kind === 'destination').length, 2);
+assert.ok(metadata.areas.includes('elmina'),'Keep the working Elmina example available.');
+assert.ok(metadata.areas.includes(metadata.default_area),'The default area needs actual source data.');
+const klReady=metadata.areas.includes('pasar-seni');
+assert.equal(metadata.pilot_status['pasar-seni'],klReady?'available':'awaiting-source-data');
+assert.equal(metadata.default_area,klReady?'pasar-seni':'elmina');
+if(!klReady){
+    const home=await readFile(new URL('index.html',out),'utf8');
+    assert.ok(home.includes('Central KL pilot · data pending'),'The public site must explain the pending KL source.');
+    assert.ok(!home.includes('Discover central KL on foot'),'Do not advertise unavailable KL routing.');
+}
+for(const area of metadata.areas){
+    const read=async name=>JSON.parse(await readFile(new URL(`pilot/${area}/${name}.json`,out),'utf8'));
+    const context=await read('context');assert.equal(context.area_id,area);
+    if(area==='pasar-seni'){
+        validatePilotSnapshot({area_id:area,graph:await read('graph'),walking:await read('walking-data'),hazards:await read('hazards'),reports:await read('reports'),context});
+        for(const name of ['paths','places','transit','satellite']){
+            const layer=JSON.parse(await readFile(new URL(`pilot/${area}/gis/${name}.geojson`,out),'utf8'));
+            assert.equal(layer.type,'FeatureCollection');
+        }
+    }
+}
+await access(new URL('planning-worker/planning-entry.js',out));
+const entry=await readFile(new URL('planning-worker/planning-entry.js',out),'utf8');
+assert.ok(entry.includes('./planning-dispatch.js'),'The planning worker needs browser-compatible module paths.');
 await access(new URL('.nojekyll', out));
 await access(new URL('offline-walks.html', out));
 await access(new URL('walk-offline-worker.js', out));
