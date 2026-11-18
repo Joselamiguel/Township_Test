@@ -46,8 +46,11 @@ test('actual KL landmarks route on the source network and remain yellow until fi
 
 test('mapped Central Market hours and unchecked seating constrain real routes',()=>{
     const place=destination('way:23768012');
-    const closed=planJourney(bundle.graph.nodes,bundle.graph.edges,bundle.walking,{...request(place),departure_at:'2026-11-19T01:00:00Z'},[],null,['direct']);
-    assert.equal(closed.recommended,null,'Mapped building hours must not be lost at its entrances.');
+    for(const departure_at of ['2026-11-19T01:00:00Z','2026-11-19T13:55:00Z']){
+        const closed=planJourney(bundle.graph.nodes,bundle.graph.edges,bundle.walking,{...request(place),departure_at},[],null,['direct']);
+        assert.equal(closed.recommended,null,'Mapped building hours must cover the arrival time.');
+        assert.match(closed.reasons[0],/opening hours/);
+    }
     const strict=planJourney(bundle.graph.nodes,bundle.graph.edges,bundle.walking,request(place,{require_rests:true,rest_interval_min:5}),[],null,['direct']);
     assert.equal(strict.recommended,null,'Mapped benches are not currently checked rest stops.');
 });

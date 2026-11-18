@@ -310,7 +310,7 @@ export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingD
     const candidates = entrances.filter(a => (!input.entrance_id || a.id === input.entrance_id) && prepared.assets.has(a.id));
     if (!candidates.length) return { routes: {}, recommended: null, reasons: ['This place has no mapped access point connected to the walking network.'] };
     const routes: JourneyPlan['routes'] = {};
-    let searchLimited = false;
+    let searchLimited = false, closedAtArrival = false;
     const speed = input.needs.speed_mps ?? PROFILES[input.profile].speed_mps;
     const slot = slotForHour(malaysiaHour(input.departure_at));
     for (const mode of modes) {
@@ -331,7 +331,7 @@ export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingD
             const route = summarise(prepared, found.final, entrance, input, data, ctx);
             if (input.needs.verified_only && route.suitability !== 'green') continue;
             // An entrance's opening window must also cover actual arrival.
-            if (openingAt(values.opening_hours, route.arrival_at) === false) continue;
+            if (openingAt(values.opening_hours, route.arrival_at) === false) { closedAtArrival = true; continue; }
             const rank = found.final.cost + (route.suitability === 'green' ? 0 : 100000);
             if (rank < bestCost) { routes[mode] = route; bestCost = rank; }
         }
@@ -343,7 +343,7 @@ export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingD
             + r.total_min + (slot === 'night' ? r.dark_m / 10 : r.uncovered_m / (feelsLike != null && feelsLike >= 32 ? 20 : 50));
         return score(ra) - score(rb);
     })[0] ?? null;
-    const reasons = available.length ? [] : searchLimited ? ['The route search could not complete for these settings. No recommendation is available; try a smaller trip budget.'] : [
+    const reasons = available.length ? [] : searchLimited ? ['The route search could not complete for these settings. No recommendation is available; try a smaller trip budget.'] : closedAtArrival ? ['The matching routes arrive outside the access points’ opening hours. Choose a different departure time or place.'] : [
         input.needs.require_rests ? `No connected route meets your ${input.needs.rest_interval_min}-minute interval with verified rest facilities.`
             : 'No connected route meets the selected needs and walking budget, or its access points are closed.',
         ...(input.needs.verified_only ? ['Current verification records are required for the path, crossings and access point.'] : []),
