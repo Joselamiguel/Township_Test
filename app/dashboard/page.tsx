@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
+import { useRouter,useSearchParams } from 'next/navigation';
 import type { MouseEvent } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -13,7 +14,10 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { loadReports, markReportFixed, loadWalkingData } from '@/lib/api';
 import type { MaintenanceDefect } from '@/lib/types';
-import { DEFAULT_ORIGIN, PRECINCT_NAME } from '@/lib/precinct';
+import { PILOTS,pilotFromParams,type PilotId } from '@/lib/pilots';
+import { useClientReady } from '@/lib/use-client-ready';
+import PilotSelector from '@/components/walking/PilotSelector';
+import PilotSources from '@/components/walking/PilotSources';
 import {
     rankInterventions,
     estimateDefectCost,
@@ -24,7 +28,6 @@ import {
 const InteractiveMap = dynamic(() => import('@/components/map/InteractiveMap'), { ssr: false });
 
 const POLL_MS = 30_000;
-const DEFAULT_CENTER = DEFAULT_ORIGIN;
 
 type Kind = 'shade' | 'light' | 'ramp' | 'crossing';
 type Filter = 'all' | Kind;
@@ -93,6 +96,13 @@ function Kpi({ Icon, label, value, sub }: { Icon: LucideIcon; label: string; val
 }
 
 export default function AdminDashboardPage() {
+    const ready=useClientReady();
+    return ready?<Suspense fallback={<p role="status">Loading area…</p>}><DashboardWithParams/></Suspense>:<main className="p-6" role="status">Loading maintenance dashboard…</main>;
+}
+function DashboardWithParams(){const params=useSearchParams();return <DashboardWorkspace key={params.toString()} area={pilotFromParams(params)}/>;}
+
+function DashboardWorkspace({area}:{area:PilotId}) {
+    const router=useRouter();
     const [defects, setDefects] = useState<MaintenanceDefect[]>([]);
     const [loading, setLoading] = useState(true);
     const [dataCounts, setDataCounts] = useState({ places: 0, observations: 0 });
@@ -115,7 +125,7 @@ export default function AdminDashboardPage() {
     useEffect(() => {
         async function loadData(silent = false) {
             try {
-                const [{ reports }, walking] = await Promise.all([loadReports(), loadWalkingData()]);
+                const [{ reports }, walking] = await Promise.all([loadReports('open',area), loadWalkingData(area)]);
                 setDefects(reports);
                 setDataCounts({ places: walking.assets.filter(a => ['destination','transit'].includes(a.kind)).length, observations: walking.verifications.length });
                 setLoadError(false);
@@ -132,7 +142,7 @@ export default function AdminDashboardPage() {
         if (IS_PAGES_PREVIEW) return;
         const timer = setInterval(() => void loadData(true), POLL_MS);
         return () => clearInterval(timer);
-    }, [refreshVersion]);
+    }, [refreshVersion,area]);
 
     // Notices fade away on their own
     useEffect(() => {
@@ -283,7 +293,7 @@ export default function AdminDashboardPage() {
         setFixingId(id);
 
         try {
-            await markReportFixed(id);
+            await markReportFixed(id,area);
             setDefects((prev) => prev.filter((d) => String(d.id) !== id));
             setSelectedId((cur) => (cur === id ? null : cur));
             setNotice({ tone: 'ok', text: 'Marked as fixed.' });
@@ -322,14 +332,15 @@ export default function AdminDashboardPage() {
 
     return (
         <div className="min-h-screen bg-[#f8f5f5] text-slate-800 font-sans pb-10">
-            <div className="mx-auto max-w-7xl px-4"><PreviewNotice /></div>
+            <div className="mx-auto max-w-7xl px-4"><PreviewNotice area={area}/></div>
             {/* Header */}
             <header className="bg-white border-b border-slate-200/80 border-t-4 border-t-[#A4262C] px-4 sm:px-8 py-3 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-50">
                 <h1 className="text-xl font-extrabold tracking-tight text-slate-900 flex flex-wrap items-center gap-2">
                     TownshipGo <span className="text-slate-300 font-normal">◆</span> <span className="text-slate-500 font-semibold text-base">Command Center</span>
                 </h1>
                 <div className="flex flex-wrap items-center gap-3">
-                    <Link href="/verification" className="inline-flex min-h-11 items-center text-sm font-bold text-[#7F1D22] underline">Verification records</Link>
+                    <Link href={`/resident?area=${area}`} className="inline-flex min-h-11 items-center text-sm font-bold text-[#7F1D22] underline">Walking planner</Link>
+                    <Link href={`/verification?area=${area}`} className="inline-flex min-h-11 items-center text-sm font-bold text-[#7F1D22] underline">Verification records</Link>
 
                     <span className="text-xs text-slate-500">
                         {IS_PAGES_PREVIEW ? 'Snapshot preview' : lastUpdated
@@ -354,6 +365,8 @@ export default function AdminDashboardPage() {
             )}
 
             <main className="max-w-[1500px] mx-auto px-4 sm:px-6 mt-6 space-y-6">
+                <PilotSelector area={area} onChange={next=>router.replace(`?area=${next}`)}/>
+                <PilotSources area={area}/>
 
                 {/* KPI strip */}
                 <section aria-label="Key figures" className="grid grid-cols-1 min-[480px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -372,7 +385,7 @@ export default function AdminDashboardPage() {
                             <div className="absolute top-4 left-4 z-[1100] bg-white/95 shadow-md rounded-xl px-3 py-1.5 border border-slate-200 flex items-center gap-2 max-w-[60%]">
                                 <MapPin className="w-4 h-4 text-[#A4262C] flex-shrink-0" aria-hidden />
                                 <span className="text-xs font-bold text-slate-800 truncate">
-                                    {selectedDefect?.location_name ?? PRECINCT_NAME}
+                                    {selectedDefect?.location_name ?? PILOTS[area].short_name}
                                 </span>
                             </div>
                             <div className="absolute inset-2 rounded-xl overflow-hidden">
@@ -381,7 +394,7 @@ export default function AdminDashboardPage() {
                                     selectedPinId={selectedItem ? String(selectedItem.id) : null}
                                     hoveredPinId={hoveredId}
                                     onPinSelect={(id) => { setSelectedId(String(id)); setConfirmFixId(null); }}
-                                    startCoords={DEFAULT_CENTER}
+                                    startCoords={PILOTS[area].centre}
                                 />
                             </div>
                         </div>

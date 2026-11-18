@@ -121,3 +121,18 @@ CREATE TABLE IF NOT EXISTS verification_records (
 );
 CREATE INDEX IF NOT EXISTS idx_walking_assets_parent ON walking_assets(parent_id);
 CREATE INDEX IF NOT EXISTS idx_verification_target ON verification_records(target_type, target_id, observed_at DESC, id DESC);
+
+-- Existing records belong to the original Elmina example. Area scoping is additive.
+ALTER TABLE path_nodes ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+ALTER TABLE path_edges ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+ALTER TABLE path_edges ADD COLUMN IF NOT EXISTS foot_direction TEXT NOT NULL DEFAULT 'both' CHECK (foot_direction IN ('both','forward','backward'));
+ALTER TABLE walking_assets ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+ALTER TABLE verification_records ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+ALTER TABLE hazard_reports ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+ALTER TABLE defect_reports ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+CREATE INDEX IF NOT EXISTS idx_path_edges_area ON path_edges(area_id,id);
+CREATE INDEX IF NOT EXISTS idx_path_nodes_area ON path_nodes(area_id,id);
+CREATE INDEX IF NOT EXISTS idx_walking_assets_area ON walking_assets(area_id,id);
+CREATE INDEX IF NOT EXISTS idx_verification_area ON verification_records(area_id,target_type,target_id);
+CREATE INDEX IF NOT EXISTS idx_hazard_area ON hazard_reports(area_id,status);
+CREATE INDEX IF NOT EXISTS idx_defect_area ON defect_reports(area_id,status);

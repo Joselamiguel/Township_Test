@@ -4,12 +4,15 @@ A pedestrian walking planner and footpath maintenance dashboard. Residents can c
 
 The app now runs on **Next.js → API routes → PostgreSQL/PostGIS**. It uses free, open-source software and the included OpenStreetMap snapshot. No hosted database account, API key or database subscription is required for local development.
 
+The new primary study area is **Pasar Seni–Chinatown–Masjid Jamek**, with **Elmina bridges retained as an example**. This branch includes separate area selection, source importers, provenance/coverage panels, GTFS/context adapters and GIS exports. **The initial real KL snapshot is pending the cloud network-domain update; this branch is not ready to deploy until that source bundle is imported.** See [pilot setup and QGIS review](docs/pasar-seni-pilot.md).
+
 The public [GitHub Pages site](https://roshanm75.github.io/Township_Test/) is an **interactive preview** of the walking planner, built from the included OSM snapshot. Explore, Plan, Walk and Saved provide personal needs, return walks, facility discovery, condition timelines, device walk history, comfort feedback, personal pace suggestions, offline packs and private condition reports. Shared maintenance reports and verification edits need the full server version below. See the [GitHub Pages deployment guide](docs/github-pages.md) and [everyday walking tools guide](docs/everyday-walking-tools.md).
 
 To build and test the public version without a database:
 
 ```bash
 npm ci
+npm run data:refresh
 npm run build:pages
 npm run preview:pages
 ```
@@ -22,6 +25,7 @@ Prerequisites: **Node.js 24 LTS** (`nvm use`), npm, and Docker with Docker Compo
 
 ```bash
 npm ci
+npm run data:refresh
 npm run db:up
 npm run db:setup
 npm run dev
@@ -33,7 +37,7 @@ npm run dev
 - `/verification` — map destinations, entrances and facilities; record dated, field-specific checks
 - `/api/health` — database, PostGIS version and graph counts
 
-`db:up` starts PostgreSQL 17/PostGIS 3.5, bound to the local loopback interface. `db:setup` creates the schema and imports pedestrian paths from the included `precinct.json` file. A first setup needs Internet access to download packages and the database image. Subsequent route planning and reports use the local database.
+`db:up` starts PostgreSQL 17/PostGIS 3.5, bound to the local loopback interface. `db:setup` creates the schema and imports pedestrian paths from the included Elmina `precinct.json` and the KL bundle when present. Without a KL bundle, `/resident?area=elmina` remains available; the KL API reports that its dataset has not been imported. A first setup needs Internet access to download packages, source data and the database image. Subsequent route planning and reports use the local database.
 
 For a one-command startup after installation, use `npm run dev:local`. To stop the database, run `npm run db:down`; its Docker volume retains the data.
 
@@ -63,9 +67,9 @@ No migrations or writes to an existing hosted database occur. `db/schema.sql` ta
 
 ## Pedestrian data
 
-The default import contains **547 nodes and 602 pedestrian edges**, including 35 mapped crossings, from the supplied OpenStreetMap snapshot. It excludes road carriageways and private/prohibited foot access. Shared cycleways, service paths and tracks require explicit public foot access.
+The **Elmina example** contains **547 nodes and 602 pedestrian edges**, including 35 mapped crossings, from the supplied OpenStreetMap snapshot. The KL dataset has its own source-derived coverage counts and identifiers. Both exclude road carriageways and private/prohibited foot access. Shared cycleways, service paths and tracks require explicit public foot access.
 
-Sample start and destinations now match the Elmina snapshot: Jambatan Pelangi Elmina and the Iconic Bridge of Elmina City are both reachable on its pedestrian network. The old Universiti Malaya sample locations belonged to a different area. Place configuration lives in `lib/precinct.ts`; update it together with the data source when moving to another precinct. The planner still reports no route when a chosen location is outside the mapped network or disconnected.
+Sample start and destinations match the Elmina snapshot: Jambatan Pelangi Elmina and the Iconic Bridge of Elmina City are both reachable on its pedestrian network. The old Universiti Malaya sample locations belonged to a different area. Area boundaries/defaults live in `lib/pilots.ts`; Elmina example places remain in `lib/precinct.ts`. The KL importer derives places and its start from the actual source network. The planner reports no route when a chosen location is outside the mapped network or disconnected.
 
 Unknown shade, lighting and accessibility attributes remain unknown; routing assumptions are not field observations. See [data sources and import rules](docs/data-sources.md) for provenance, attribution and limitations.
 
@@ -90,6 +94,7 @@ flowchart LR
 ```
 
 - `GET /api/graph` returns the pedestrian graph with PostGIS geometry and attribution.
+- `GET /api/pilot-context?area=pasar-seni` returns source coverage, local transit, district/demand context and GIS metadata. Other read APIs accept the same area parameter; legacy unscoped calls retain Elmina.
 - `GET /api/hazards` returns open routing hazards.
 - `GET /api/walking-data` returns mapped assets, path anchors and verification history.
 - `POST /api/assets` adds an unverified mapped place, entrance or facility.

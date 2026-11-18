@@ -1,4 +1,6 @@
-import { DESTINATIONS } from '../lib/precinct.ts';
+import { DEFAULT_ORIGIN, DESTINATIONS } from '../lib/precinct.ts';
+import { networkCoverage } from '../lib/data/osm.ts';
+import { createHash } from 'node:crypto';
 import { projectPoint } from '../lib/walking-geometry.ts';
 
 // Public, reproducible source data only. Never export the local database or its
@@ -21,10 +23,17 @@ export function createPreviewSnapshot(graph, source, now = new Date().toISOStrin
             edge_id: nearest.edge.id, edge_fraction: nearest.fraction, connection_distance_m: nearest.distance,
             anchor_lat: nearest.point[1], anchor_lng: nearest.point[0] });
     }
+    const datasetId=createHash('sha256').update(JSON.stringify({nodes:graph.nodes,edges,assets})).digest('hex');
+    const origin={coordinates:DEFAULT_ORIGIN,label:'Elmina sample start',source_ref:'https://www.openstreetmap.org/node/8447864418'};
+    const sourceDate=source.osm3s?.timestamp_osm_base??null;
     return {
         graph: { nodes: graph.nodes, edges, source: { name: 'OpenStreetMap', pedestrian_only: true,
-            attribution: '© OpenStreetMap contributors (ODbL)', snapshot_at: source.osm3s?.timestamp_osm_base ?? null } },
-        walking: { assets, verifications: [], as_of: now },
+            attribution: '© OpenStreetMap contributors (ODbL)', snapshot_at: sourceDate,area_id:'elmina',dataset_id:datasetId,origin,featured_ids:assets.filter(a=>a.kind==='destination').map(a=>a.id) } },
+        walking: { assets, verifications: [], as_of: now,area_id:'elmina',dataset_id:datasetId },
         hazards: { hazards: [] }, reports: { reports: [] },
+        context:{area_id:'elmina',dataset_id:datasetId,built_at:now,origin,featured_ids:assets.filter(a=>a.kind==='destination').map(a=>a.id),coverage:networkCoverage(graph.nodes,edges,assets).coverage,
+            sources:[{id:'osm',name:'Elmina OpenStreetMap example',url:'https://www.openstreetmap.org/copyright',license:'ODbL',status:'loaded',fetched_at:null,data_at:sourceDate,records:edges.length,note:'Original two-bridge example. Mapped access points are not field-verified entrances.'}],
+            transit:{stops:[],routes:[],service_dates:[]},demand:{data_at:null,stations:[],note:'No transit-demand source is attached to this example.'},
+            demographics:{district:'Petaling',year:null,population:null,older_population:null,older_share:null,note:'No population source is attached to this example.'},landmarks:[],environment:{scenes:[],note:'No imagery analysis is attached to this example.'}},
     };
 }

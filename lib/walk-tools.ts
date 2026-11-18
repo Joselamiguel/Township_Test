@@ -7,8 +7,8 @@ export const FACILITY_LABELS = { rest: 'Seats', toilet: 'Toilets', water: 'Drink
 export type FacilityKind = keyof typeof FACILITY_LABELS;
 
 export function findFacilities(nodes: PathNode[], edges: PathEdge[], data: WalkingData,
-    request: Omit<PlanningInput, 'destination' | 'entrance_id'>, kind: FacilityKind, hazards: HazardReport[] = []) {
-    return data.assets.filter(a => a.kind === kind).map(asset => {
+    request: Omit<PlanningInput, 'destination' | 'entrance_id'>, kind: FacilityKind, hazards: HazardReport[] = [],ids?:string[]) {
+    return data.assets.filter(a => a.kind === kind&&(!ids||ids.includes(a.id))).map(asset => {
         const plan = planJourney(nodes, edges, data, { ...request, destination: asset }, hazards, null, ['direct']);
         let route = plan.routes.direct ?? null;
         const at = route?.arrival_at ?? request.departure_at;

@@ -1,21 +1,25 @@
 'use client';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, Suspense, type FormEvent } from 'react';
+import { useRouter,useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { loadGraph, loadWalkingData, createWalkingAsset, recordVerification, type GraphData } from '@/lib/api';
 import { useClientReady } from '@/lib/use-client-ready';
 import { observationFields } from '@/lib/verification-fields';
 import { malaysiaInput, fromMalaysiaInput } from '@/lib/comfort';
-import { DEFAULT_ORIGIN } from '@/lib/precinct';
 import type { WalkingData, VerificationTarget, AssetKind, PlaceCategory, ObservationValue } from '@/lib/walking';
 import { IS_PAGES_PREVIEW } from '@/lib/site';
 import VerificationPreview from '@/components/walking/VerificationPreview';
+import { PILOTS,pilotFromParams,type PilotId } from '@/lib/pilots';
+import PilotSelector from '@/components/walking/PilotSelector';
+import PilotSources from '@/components/walking/PilotSources';
 
 const Map = dynamic(() => import('@/components/map/InteractiveMap'), { ssr: false });
 const control = 'mt-1 min-h-11 w-full rounded-lg border border-slate-400 bg-white px-3 py-2 text-slate-900';
 const button = 'min-h-11 rounded-xl bg-[#A4262C] px-4 py-3 font-bold text-white disabled:opacity-50';
 
-function VerificationWorkspace() {
+function VerificationWorkspace({area}:{area:PilotId}) {
+    const router=useRouter();
     const [data, setData] = useState<WalkingData | null>(null);
     const [graph, setGraph] = useState<GraphData | null>(null);
     const [version, setVersion] = useState(0);
@@ -35,11 +39,11 @@ function VerificationWorkspace() {
     const [asset, setAsset] = useState({ name: '', kind: 'destination' as AssetKind, category: 'other' as PlaceCategory, parent_id: '', lat: '', lng: '', source_ref: '' });
     useEffect(() => {
         async function refresh() {
-            try { const [g, d] = await Promise.all([loadGraph(), loadWalkingData()]); setGraph(g); setData(d); }
+            try { const [g, d] = await Promise.all([loadGraph(area), loadWalkingData(area)]); setGraph(g); setData(d); }
             catch (e) { setError(e instanceof Error ? e.message : 'Could not load records.'); }
         }
         void refresh();
-    }, [version]);
+    }, [version,area]);
     const fields = observationFields(target);
     const targets = target === 'path' || target === 'crossing'
         ? (graph?.edges ?? []).filter(e => Boolean(e.is_crossing) === (target === 'crossing')).map(e => ({ id: String(e.id), name: `${e.name || 'Footpath'} · ${e.id}` }))
@@ -54,7 +58,7 @@ function VerificationWorkspace() {
             }
             const instant = fromMalaysiaInput(observed);
             if (!instant) throw new Error('Choose the observation time.');
-            await recordVerification({ target_type: target, target_id: targetId, status, method, reviewer, observed_at: instant,
+            await recordVerification({area_id:area, target_type: target, target_id: targetId, status, method, reviewer, observed_at: instant,
                 valid_until: status === 'verified' ? new Date(`${reviewDate}T23:59:59+08:00`).toISOString() : null,
                 source_ref: source, notes, attributes });
             setMessage('Observation saved. Refresh the walking planner to use the latest checks.'); setValues({}); setNotes(''); setVersion(v => v + 1);
@@ -64,7 +68,7 @@ function VerificationWorkspace() {
     async function saveAsset(event: FormEvent) {
         event.preventDefault(); setBusy(true); setError(''); setMessage('');
         try {
-            const result = await createWalkingAsset({ ...asset, lat: Number(asset.lat), lng: Number(asset.lng), parent_id: asset.kind === 'entrance' ? asset.parent_id : null });
+            const result = await createWalkingAsset({ ...asset,area_id:area, lat: Number(asset.lat), lng: Number(asset.lng), parent_id: asset.kind === 'entrance' ? asset.parent_id : null });
             setMessage('Mapped point saved as unverified. Add an observation to confirm its actual condition.');
             if (asset.kind !== 'destination') { setTarget(asset.kind === 'entrance' ? 'entrance' : 'facility'); setTargetId(result.id); }
             setAsset({ ...asset, name: '' }); setVersion(v => v + 1);
@@ -75,15 +79,17 @@ function VerificationWorkspace() {
     return <main className="min-h-screen bg-slate-50 px-4 py-6 font-sans text-slate-900 md:px-8">
         <div className="mx-auto max-w-6xl space-y-6">
             <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-3xl font-extrabold">Walking verification records</h1><p className="mt-2 max-w-3xl text-slate-600">Record what was actually observed on paths, crossings, access points and rest facilities. A mapped or reported feature stays unverified until a dated check confirms its condition.</p></div>
-                <nav className="flex gap-4 font-bold underline"><Link href="/resident">Plan a walk</Link><Link href="/dashboard">Maintenance</Link></nav>
+                <nav className="flex gap-4 font-bold underline"><Link href={`/resident?area=${area}`}>Plan a walk</Link><Link href={`/dashboard?area=${area}`}>Maintenance</Link></nav>
             </header>
+            <PilotSelector area={area} onChange={next=>router.replace(`?area=${next}`)}/>
+            <PilotSources area={area}/>
             {error && <p role="alert" className="rounded-xl border border-red-400 bg-red-50 p-4 text-red-900">{error}</p>}
             {message && <p role="status" className="rounded-xl border border-green-400 bg-green-50 p-4 text-green-900">{message}</p>}
             {!data && <p role="status">Loading walking records…</p>}
             <div className="grid gap-6 lg:grid-cols-2">
                 <section className="rounded-2xl border border-slate-300 bg-white p-5">
                     <h2 className="text-xl font-bold">Add a place or facility</h2><p className="mt-2 text-sm text-slate-600">Click the map to choose a position, or enter coordinates. Connecting to a nearby path is a geometric suggestion, not a verified physical link.</p>
-                    <div className="my-4 h-72 overflow-hidden rounded-xl border border-slate-300"><Map startCoords={DEFAULT_ORIGIN} onLocationSelect={(lat, lng) => setAsset(a => ({ ...a, lat: lat.toFixed(7), lng: lng.toFixed(7) }))} selectedLocation={asset.lat && asset.lng ? [Number(asset.lat), Number(asset.lng)] : undefined} assets={data?.assets ?? []} /></div>
+                    <div className="my-4 h-72 overflow-hidden rounded-xl border border-slate-300"><Map startCoords={PILOTS[area].centre} onLocationSelect={(lat, lng) => setAsset(a => ({ ...a, lat: lat.toFixed(7), lng: lng.toFixed(7) }))} selectedLocation={asset.lat && asset.lng ? [Number(asset.lat), Number(asset.lng)] : undefined} assets={data?.assets.slice(0,120) ?? []} /></div>
                     <form onSubmit={saveAsset} className="space-y-3">
                         <label className="block text-sm font-semibold">Name<input required maxLength={120} className={control} value={asset.name} onChange={e => setAsset({ ...asset, name: e.target.value })} /></label>
                         <div className="grid grid-cols-2 gap-3">
@@ -133,5 +139,6 @@ function VerificationWorkspace() {
 }
 export default function VerificationPage() {
     const ready = useClientReady();
-    return ready ? (IS_PAGES_PREVIEW ? <VerificationPreview /> : <VerificationWorkspace />) : <main className="p-6" role="status">Loading verification workspace…</main>;
+    return ready ? (IS_PAGES_PREVIEW ? <VerificationPreview /> : <Suspense fallback={<p role="status">Loading area…</p>}><WorkspaceWithParams/></Suspense>) : <main className="p-6" role="status">Loading verification workspace…</main>;
 }
+function WorkspaceWithParams(){const params=useSearchParams();return <VerificationWorkspace key={params.toString()} area={pilotFromParams(params)}/>;}

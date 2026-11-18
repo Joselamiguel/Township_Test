@@ -9,7 +9,7 @@ export async function seedWalkingData(pool, sourcePath) {
         for (const place of DESTINATIONS) {
             const edge = await client.query(`SELECT id, ST_LineLocatePoint(geom, ST_SetSRID(ST_MakePoint($1,$2),4326)) AS fraction,
                 ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography) AS distance
-                FROM path_edges WHERE pedestrian_access AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,3)
+                FROM path_edges WHERE area_id='elmina' AND pedestrian_access AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,3)
                 ORDER BY distance LIMIT 1`, [place.coords[1], place.coords[0]]);
             if (!edge.rows[0]) continue;
             const anchor = edge.rows[0], ref = `https://www.openstreetmap.org/node/${place.osm_node_id}`;
@@ -24,7 +24,7 @@ export async function seedWalkingData(pool, sourcePath) {
         for (const element of raw.elements ?? []) {
             const t = element.tags ?? {};
             if (element.type === 'way' && ['yes', 'no'].includes(t.covered)) {
-                await client.query('UPDATE path_edges SET covered=$1 WHERE osm_way_id=$2 AND covered IS NULL', [t.covered === 'yes', element.id]);
+                await client.query("UPDATE path_edges SET covered=$1 WHERE area_id='elmina' AND osm_way_id=$2 AND covered IS NULL", [t.covered === 'yes', element.id]);
             }
             if (element.type !== 'node' || !Number.isFinite(element.lat) || !Number.isFinite(element.lon)) continue;
             const kind = t.amenity === 'bench' ? 'rest' : t.amenity === 'toilets' ? 'toilet' : t.amenity === 'drinking_water' ? 'water'
@@ -34,7 +34,7 @@ export async function seedWalkingData(pool, sourcePath) {
                 : t.leisure === 'park' ? 'park' : t.shop || t.amenity === 'marketplace' ? 'shopping' : 'other';
             const anchor = await client.query(`SELECT id,ST_LineLocatePoint(geom,ST_SetSRID(ST_MakePoint($1,$2),4326)) AS fraction,
                 ST_Distance(geom::geography,ST_SetSRID(ST_MakePoint($1,$2),4326)::geography) AS distance FROM path_edges
-                WHERE ST_DWithin(geom::geography,ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,30) ORDER BY distance LIMIT 1`, [element.lon,element.lat]);
+                WHERE area_id='elmina' AND ST_DWithin(geom::geography,ST_SetSRID(ST_MakePoint($1,$2),4326)::geography,30) ORDER BY distance LIMIT 1`, [element.lon,element.lat]);
             const a = anchor.rows[0];
             const props = { ...(kind === 'rest' ? { has_seat: true } : {}), ...(t.opening_hours ? { opening_hours: t.opening_hours } : {}) };
             await client.query(`INSERT INTO walking_assets(external_id,kind,category,name,lat,lng,source,source_ref,properties,edge_id,edge_fraction,connection_distance_m)

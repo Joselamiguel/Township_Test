@@ -16,7 +16,7 @@ export default function HomeWalkPreview() {
     const [data, setData] = useState<{ graph: GraphData; walking: WalkingData; hazards: HazardReport[] } | null>(null);
     const [error, setError] = useState(false);
     useEffect(() => {
-        Promise.all([loadGraph(), loadWalkingData(), loadHazards()])
+        Promise.all([loadGraph('elmina'), loadWalkingData('elmina'), loadHazards('elmina')])
             .then(([graph, walking, hazards]) => setData({ graph, walking, hazards: hazards.hazards }))
             .catch(() => setError(true));
     }, []);
@@ -40,7 +40,7 @@ export default function HomeWalkPreview() {
             <h2 className="text-lg font-extrabold text-[#24392f]">{place?.name || DESTINATIONS[0].name}</h2>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <span className="flex items-center gap-2 text-sm text-slate-700"><Clock3 size={17} aria-hidden />{route ? `${Math.ceil(route.total_min)} min · ${Math.round(route.length_m)} m` : 'Choose your pace and requirements'}</span>
-                <Link href="/resident" className="inline-flex min-h-11 items-center gap-2 font-bold text-[#7f1d22] underline">Plan for me<ArrowUpRight size={18} aria-hidden /></Link>
+                <Link href="/resident?area=elmina" className="inline-flex min-h-11 items-center gap-2 font-bold text-[#7f1d22] underline">Try this example<ArrowUpRight size={18} aria-hidden /></Link>
             </div>
         </div>
     </section>;

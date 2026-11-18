@@ -23,10 +23,13 @@ The default `npm run dev` / `npm run build` / `npm start` application retains it
 
 ## Build locally
 
+The new main KL pilot requires `npm run data:refresh` and reviewed `data/pasar-seni/bundle.json`/`sources.json` before this production build. The initial import is pending the cloud network-domain change. Until then, use `npm run build:pages -- --example-only` strictly for local Elmina export checks; GitHub Actions rejects that limited mode. See [pilot setup](pasar-seni-pilot.md). Do not deploy test fixtures as the pilot.
+
 Use Node.js 24 and the existing lockfile:
 
 ```bash
 npm ci
+npm run data:refresh
 npm run build:pages
 npm run check:pages
 npm run preview:pages

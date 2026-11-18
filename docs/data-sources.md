@@ -1,5 +1,7 @@
 # Walking data and provenance
 
+For the new **Pasar Seni–Chinatown–Masjid Jamek primary pilot**, see [source acquisition and GIS review](pasar-seni-pilot.md). Its data pipeline is separate from the retained Elmina example described below. The first live KL source import remains blocked by the running cloud's download allowlist; no invented KL source data is included.
+
 ## Included source
 
 `precinct.json` is an OpenStreetMap/Overpass JSON snapshot included in the repository. Its `timestamp_osm_base` is `2026-10-18T18:50:06Z`. Normal setup processes this local file; it does not contact an external routing API or download a new dataset.

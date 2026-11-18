@@ -21,6 +21,7 @@ export default function WalkingConditions({ night, forecast, onCompare, onInspec
             {forecast?.rain_probability != null && <span className="rounded-full border border-emerald-200 bg-white px-3 py-1.5">{Math.round(forecast.rain_probability)}% rain probability</span>}
             {!forecast && <span className="text-slate-600">Hourly forecast unavailable · path estimates still apply</span>}
         </div>
+        {forecast&&<p className="mt-2 text-xs">Weather: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer" className="font-bold underline">Open-Meteo</a> · area forecast, not a street-level sensor reading.</p>}
         <button type="button" onClick={() => rainy && !night ? onInspectCover() : onCompare(night ? 'safest' : 'coolest')} className="mt-2 inline-flex min-h-11 items-center gap-2 font-bold text-emerald-900 underline">
             {night ? 'Compare lighting' : rainy ? 'Inspect cover records' : 'Compare sun exposure'}<ArrowUpRight size={18} aria-hidden />
         </button>

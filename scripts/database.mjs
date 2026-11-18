@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import dotenv from 'dotenv';
 import { getPool, closePool } from '../lib/server/postgres.ts';
 import { seedWalkingData } from './seed-walking-data.mjs';
+import { seedPilotArea } from './seed-pilot-area.mjs';
 
 dotenv.config({ path: '.env.local', quiet: true });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -40,7 +41,7 @@ async function seed() {
         await client.query('BEGIN');
         await client.query("SELECT pg_advisory_xact_lock(hashtext('townshipgo-graph-import'))");
         const { rows } = await client.query("SELECT value FROM app_metadata WHERE key = 'graph_sha256'");
-        const existing = await client.query('SELECT count(*)::int AS count FROM path_edges');
+        const existing = await client.query("SELECT count(*)::int AS count FROM path_edges WHERE area_id='elmina'");
         if (existing.rows[0].count > 0) {
             if (rows[0]?.value !== hash) throw new Error('A different graph already exists. Use a separate database for a new dataset so reports and audits keep their original edge IDs.');
             await client.query('COMMIT');
@@ -80,7 +81,13 @@ try {
     if (!['setup', 'migrate', 'seed'].includes(command)) throw new Error('Use setup, migrate or seed.');
     if (command === 'setup' || command === 'migrate') await migrate();
     if (command === 'setup' || command === 'seed') await seed();
-    await seedWalkingData(getPool(), source);
+    if(command==='setup'||command==='seed'){
+      await seedWalkingData(getPool(), source);
+      try {
+        const bundle=JSON.parse(await readFile(resolve(root,'data/pasar-seni/bundle.json'),'utf8'));
+        await seedPilotArea(getPool(),bundle);
+      }catch(error){if(error.code!=='ENOENT')throw error;console.log('Central KL source bundle is not present yet; the Elmina example remains available.');}
+    }
 } catch (error) {
     // PostgreSQL errors can include connection details; print a code instead of credentials.
     console.error('Database setup failed:', error.code ?? error.message);

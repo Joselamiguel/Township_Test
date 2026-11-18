@@ -47,3 +47,13 @@ test('Pages data uses the project prefix, a current planning clock and never sen
         const weather=await loadWeather();assert.equal(weather.source,'unavailable');assert.equal(weather.feels_like_c,null);
     `], { env: { ...process.env, NEXT_PUBLIC_SITE_MODE: 'pages', NEXT_PUBLIC_BASE_PATH: '/Township_Test' } });
 });
+
+test('area-scoped public data keeps the project prefix and distinct source files',()=>{
+    execFileSync(process.execPath,['--input-type=module','-e',`
+        import assert from 'node:assert/strict';
+        import {loadGraph,loadWalkingData,loadHazards,loadReports,loadPilotContext} from './lib/api.ts';
+        const urls=[];globalThis.fetch=async url=>{urls.push(url);return Response.json({});};
+        await loadGraph('pasar-seni');await loadWalkingData('elmina');await loadHazards('pasar-seni');await loadReports('all','elmina');await loadPilotContext('pasar-seni');
+        assert.deepEqual(urls,['/Township_Test/pilot/pasar-seni/graph.json','/Township_Test/pilot/elmina/walking-data.json','/Township_Test/pilot/pasar-seni/hazards.json','/Township_Test/pilot/elmina/reports.json','/Township_Test/pilot/pasar-seni/context.json']);
+    `],{env:{...process.env,NEXT_PUBLIC_SITE_MODE:'pages',NEXT_PUBLIC_BASE_PATH:'/Township_Test'}});
+});
