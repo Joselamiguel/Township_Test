@@ -4,7 +4,7 @@ A pedestrian walking planner and footpath maintenance dashboard. Residents can c
 
 The app now runs on **Next.js → API routes → PostgreSQL/PostGIS**. It uses free, open-source software and the included OpenStreetMap snapshot. No hosted database account, API key or database subscription is required for local development.
 
-The public [GitHub Pages site](https://roshanm75.github.io/Township_Test/) is an **interactive preview** of the walking planner, built from the included OSM snapshot. It supports the map, personal needs, route comparisons, confidence explanations, reachable places and shared walk links. Shared maintenance reports and verification edits need the full server version below. See the [GitHub Pages deployment guide](docs/github-pages.md).
+The public [GitHub Pages site](https://roshanm75.github.io/Township_Test/) is an **interactive preview** of the walking planner, built from the included OSM snapshot. Explore, Plan, Walk and Saved provide personal needs, return walks, facility discovery, condition timelines, device walk history, comfort feedback, personal pace suggestions, offline packs and private condition reports. Shared maintenance reports and verification edits need the full server version below. See the [GitHub Pages deployment guide](docs/github-pages.md) and [everyday walking tools guide](docs/everyday-walking-tools.md).
 
 To build and test the public version without a database:
 

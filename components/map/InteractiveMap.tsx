@@ -7,7 +7,7 @@ import type { WalkingAsset, VerificationRecord } from '@/lib/walking';
 import type { PathEdge } from '@/lib/routing';
 import { environmentSegments, environmentCoverage, type EnvironmentLayer } from '@/lib/environment';
 import { DEFAULT_ORIGIN, DESTINATIONS } from '@/lib/precinct';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Plus, Minus, Route as RouteIcon, Layers } from 'lucide-react';
@@ -57,6 +57,8 @@ interface InteractiveMapProps {
     environment?: { edges: PathEdge[]; records: VerificationRecord[]; at: string };
     informationLayer?: EnvironmentLayer | 'routes';
     onInformationLayerChange?: (layer: EnvironmentLayer | 'routes') => void;
+    focusLocation?: [number, number];
+    liveLocation?: [number, number];
 }
 
 function LocationPicker({ onSelect }: { onSelect?: (lat: number, lng: number) => void }) {
@@ -282,6 +284,8 @@ export default function InteractiveMap({
     environment,
     informationLayer,
     onInformationLayerChange,
+    focusLocation,
+    liveLocation,
 }: InteractiveMapProps) {
     const brand = highContrast ? BRAND_HC : BRAND;
     const overview = pins !== undefined;
@@ -361,8 +365,8 @@ export default function InteractiveMap({
     }, [fitSignature]);
 
     const focus = useMemo<[number, number] | null>(
-        () => (selectedPin ? [selectedPin.lat, selectedPin.lng] : null),
-        [selectedPin?.lat, selectedPin?.lng], // eslint-disable-line react-hooks/exhaustive-deps
+        () => (focusLocation ?? (selectedPin ? [selectedPin.lat, selectedPin.lng] : null)),
+        [selectedPin?.lat, selectedPin?.lng, focusLocation], // eslint-disable-line react-hooks/exhaustive-deps
     );
 
     const popupText: CSSProperties = { fontSize: 15, lineHeight: 1.4, fontFamily: 'system-ui,sans-serif' };
@@ -408,6 +412,7 @@ export default function InteractiveMap({
                     fitLabel={fitLabel ?? (overview ? 'Show all' : 'Whole route')}
                     maxZoom={overview ? 17 : 18}
                 />
+                {liveLocation && <CircleMarker center={liveLocation} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#1d4ed8', fillOpacity: 1 }}><Tooltip>Your last usable GPS position</Tooltip></CircleMarker>}
 
                 {/* ======== Overview mode (admin) ======== */}
                 {overview && pinMarkers.map(({ pin, state, icon }) => (

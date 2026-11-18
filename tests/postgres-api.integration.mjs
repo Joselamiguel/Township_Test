@@ -184,6 +184,18 @@ test('Next.js APIs with real PostgreSQL/PostGIS', { timeout: 60000 }, async (t) 
             assert.equal((await save({ ...observation, target_type: 'entrance', target_id: entrance.id, attributes: { step_free: true, path_connection: true, available: true, opening_hours: 'Mo-Fr 09:00-17:00' } })).status, 201);
             assert.equal((await save({ ...observation, target_type: 'facility', target_id: entrance.id, attributes: { available: true } })).status, 404);
         });
+        await t.test('quick condition changes are stored as reports, including facility availability', async () => {
+            const save = body => request('/api/condition-updates', { method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body) });
+            const observation = { kind:'blocked',target_type:'path',target_id:'11',observed_at:new Date().toISOString(),status:'verified',reviewer:'Spoofed reviewer' };
+            const result=await save(observation);assert.equal(result.status,201);assert.equal(result.body.status,'reported');
+            const stored=(await request('/api/walking-data')).body.verifications.find(v=>v.id===result.body.id);
+            assert.equal(stored.status,'reported');assert.equal(stored.attributes.path_open,false);assert.notEqual(stored.reviewer,'Spoofed reviewer');
+            assert.equal(Date.parse(stored.valid_until)-Date.parse(stored.observed_at),86400000);
+            assert.equal((await save({...observation,target_type:'facility'})).status,400);
+            assert.equal((await save({...observation,target_id:'999999'})).status,404);
+            const facility=(await request('/api/walking-data')).body.assets.find(a=>a.kind==='rest');
+            assert.equal((await save({...observation,kind:'seat_unavailable',target_type:'facility',target_id:facility.id})).status,201);
+        });
         await t.test('database outages return 503 without exposing connection details', async () => {
             await fixture.end(); fixture = undefined;
             await admin.query(`DROP DATABASE "${databaseName}" WITH (FORCE)`); dropped = true;

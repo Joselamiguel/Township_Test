@@ -32,6 +32,7 @@ export default function WalkingRequirements({ needs, profile, onChange }: { need
                     <label htmlFor={`${id}-pace`}>Walking pace
                         <select id={`${id}-pace`} value={needs.speed_mps ?? ''} className="mt-1 min-h-11 w-full rounded border border-slate-400 bg-white px-2" onChange={e => set('speed_mps', e.target.value ? Number(e.target.value) : null)}>
                             <option value="">Profile estimate</option><option value="0.5">Slow: 0.5 m/s</option><option value="0.7">Steady: 0.7 m/s</option><option value="1">1 m/s</option><option value="1.3">1.3 m/s</option>
+                            {needs.speed_mps !== null && ![.5,.7,1,1.3].includes(needs.speed_mps) && <option value={needs.speed_mps}>Personal pace: {needs.speed_mps} m/s</option>}
                         </select>
                     </label>
                 </div>

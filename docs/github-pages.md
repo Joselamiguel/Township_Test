@@ -12,8 +12,12 @@ The text-only site came from Pages publishing the repository root with its legac
 - Reachable-place discovery and shared walk links that preserve the project URL prefix.
 - Mapped-place provenance and read-only verification coverage.
 - Optional weather forecasts requested directly from Open-Meteo. An outage stays explicitly unavailable.
+- Time-budget return walks, condition timelines and facility-first searches, using the actual mapped facilities and existing constraints.
+- Device-only walk recording, comfort feedback, history and opt-in personal pace suggestions.
+- Offline walk collections and downloadable self-contained HTML packs with route sketches and dated conditions; no bulk tile caching or new offline routing is promised.
+- Personal path/light/seat reports saved on this device, separately labelled as unverified.
 
-The public preview shows that shared reports and verification edits are unavailable. Reporting is disabled, the verification page displays source coverage, and the data provider rejects writes before sending them. Preferences stay in the visitor's browser. No local reports, auditor labels, evidence references, database credentials or database dumps are exported. Initial public hazard/report/verification arrays are deliberately empty, and the maintenance page does not label that absence as an all-clear survey.
+The public preview shows that shared reports and verification edits are unavailable. Shared reporting is disabled, the verification page displays source coverage, and the data provider rejects writes before sending them. Preferences, personal condition reports, recordings, feedback and saved packs stay in the visitor's browser. No server reports, auditor labels, evidence references, database credentials or database dumps are exported in the build. Initial public hazard/report/verification arrays are deliberately empty, and the maintenance page does not label that absence as an all-clear survey. See the [everyday walking tools guide](everyday-walking-tools.md) for local storage, GPS consent and offline behaviour.
 
 The default `npm run dev` / `npm run build` / `npm start` application retains its Next.js APIs and local PostgreSQL/PostGIS records, shared reports, editable facilities and observation history. See the main README for setup. The public preview is not a substitute for deploying that server when shared contributions are needed.
 

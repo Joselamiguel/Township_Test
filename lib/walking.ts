@@ -79,7 +79,20 @@ export const DEFAULT_NEEDS: WalkingNeeds = {
     rest_duration_min: 2, budget_min: 30, speed_mps: null,
 };
 
+export interface JourneyStep {
+    kind: 'path' | 'rest' | 'connection' | 'turn';
+    name: string;
+    edge_id?: number;
+    asset_id?: string;
+    coordinates: [number, number][];
+    distance_m: number;
+    start_min: number;
+    end_min: number;
+}
+
 export interface JourneyRoute extends RouteResult {
+    steps?: JourneyStep[];
+    return_walk?: boolean;
     entrance: WalkingAsset;
     destination: WalkingAsset;
     rest_stops: WalkingAsset[];
