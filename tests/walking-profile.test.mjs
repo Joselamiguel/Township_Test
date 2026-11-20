@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_NEEDS } from '../lib/walking.ts';
-import { applyAnswers, answersFrom, defaultAnswers, profileSummary, shouldOfferSetup, EVERYDAY_PACE_MPS } from '../lib/walking-profile.ts';
+import { applyAnswers, answersFrom, defaultAnswers, profileSummary, shouldOfferSetup } from '../lib/walking-profile.ts';
+import { PROFILES } from '../lib/routing.ts';
 
 test('wheelchair users are always routed step-free, even if the box was left unticked', () => {
     const { profile, needs } = applyAnswers({ ...defaultAnswers('wheelchair'), stepFree: false });
@@ -9,12 +10,19 @@ test('wheelchair users are always routed step-free, even if the box was left unt
     assert.equal(needs.step_free, true);
 });
 
-test('everyday walkers use the senior profile with a typical adult pace', () => {
+test('everyday walkers get their own profile at a typical adult pace', () => {
     const { profile, needs } = applyAnswers(defaultAnswers('everyday'));
-    assert.equal(profile, 'senior');
-    assert.equal(needs.speed_mps, EVERYDAY_PACE_MPS);
+    assert.equal(profile, 'everyday');
+    assert.equal(needs.speed_mps, null);
+    assert.ok(PROFILES.everyday.speed_mps > PROFILES.senior.speed_mps);
+    assert.equal(PROFILES.everyday.hard_steps, false);
     assert.equal(answersFrom(profile, needs).walker, 'everyday');
     assert.equal(profileSummary(profile, needs).title, 'Everyday walker');
+});
+
+test('an older save of a fast senior is read back as an everyday walker', () => {
+    assert.equal(answersFrom('senior', { ...DEFAULT_NEEDS, speed_mps: 1.25 }).walker, 'everyday');
+    assert.equal(answersFrom('senior', { ...DEFAULT_NEEDS, speed_mps: 0.8 }).walker, 'senior');
 });
 
 test('answers fill in the planner needs and keep settings the setup does not ask about', () => {

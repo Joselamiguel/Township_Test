@@ -9,7 +9,7 @@
 // Types
 // ---------------------------------------------------------------------------
 export type DataSource = 'audited' | 'reported' | 'modelled' | 'assumed';
-export type Profile = 'senior' | 'cane_walker' | 'wheelchair';
+export type Profile = 'everyday' | 'senior' | 'cane_walker' | 'wheelchair';
 export type TimeSlot = 'morning' | 'midday' | 'afternoon' | 'night';
 export type Mode = 'direct' | 'coolest' | 'sheltered' | 'safest';
 export type HazardKind = 'blocked' | 'no_ramp' | 'light_out' | 'no_shade' | 'broken_surface';
@@ -80,6 +80,8 @@ export interface ProfileConfig {
 }
 
 export const PROFILES: Record<Profile, ProfileConfig> = {
+    // Typical adult pace; steps cost a little time but are never avoided.
+    everyday: { label: 'Everyday', speed_mps: 1.25, step_penalty_s: 10, hard_steps: false, hard_slope: false, hard_rough: false, needs_kerb_ramp: false },
     senior: { label: 'Senior', speed_mps: 0.8, step_penalty_s: 90, hard_steps: false, hard_slope: false, hard_rough: false, needs_kerb_ramp: false },
     cane_walker: { label: 'Cane / walker', speed_mps: 0.6, step_penalty_s: 150, hard_steps: false, hard_slope: false, hard_rough: false, needs_kerb_ramp: false },
     wheelchair: { label: 'Wheelchair', speed_mps: 0.7, step_penalty_s: 0, hard_steps: true, hard_slope: true, hard_rough: true, needs_kerb_ramp: true },

@@ -16,7 +16,7 @@ export function readWalkParameters(
     return {
         origin: hasOrigin ? [lat, lng] as [number, number] : defaultOrigin,
         destination: hasDestination ? destination : destinationIds[0],
-        profile: (['senior', 'cane_walker', 'wheelchair'].includes(profile ?? '') ? profile : 'senior') as Profile,
+        profile: (['everyday', 'senior', 'cane_walker', 'wheelchair'].includes(profile ?? '') ? profile : 'senior') as Profile,
         mode: (['direct', 'coolest', 'sheltered', 'safest'].includes(mode ?? '') ? mode : null) as Mode | null,
         fromLink: hasOrigin || hasDestination,
     };

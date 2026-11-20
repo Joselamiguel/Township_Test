@@ -6,7 +6,7 @@ import type { Profile } from './routing.ts';
  * so a saved profile is just the usual settings, filled in once and reused for every walk.
  */
 
-export type Walker = Profile | 'everyday';
+export type Walker = Profile;
 export type SlopeLimit = 5 | 8 | 12;
 
 export interface ProfileAnswers {
@@ -29,9 +29,8 @@ export const WALKERS: { id: Walker; label: string; hint: string }[] = [
     { id: 'wheelchair', label: 'Wheelchair user', hint: 'I need step-free paths and ramps' },
 ];
 
-/** The planner has no everyday profile; it uses the senior profile with a typical adult pace instead. */
-export const EVERYDAY_PACE_MPS = 1.25;
-const EVERYDAY_MIN_MPS = 1.1;
+/** Older saves stored everyday walkers as the senior profile with a pace at or above this. */
+const LEGACY_EVERYDAY_MIN_MPS = 1.1;
 
 export const SETUP_KEY = 'townshipgo:profile-setup:v1';
 
@@ -47,10 +46,9 @@ export function defaultAnswers(walker: Walker = 'everyday'): ProfileAnswers {
 
 /** Turns the answers into the planner's profile and needs. Wheelchair users are always step-free. */
 export function applyAnswers(answers: ProfileAnswers, previous: WalkingNeeds = DEFAULT_NEEDS, previousWalker?: Walker): { profile: Profile; needs: WalkingNeeds } {
-    const profile: Profile = answers.walker === 'everyday' ? 'senior' : answers.walker;
+    const profile: Profile = answers.walker;
     // Keep a pace the person calibrated, unless they changed who is walking.
-    const speed = answers.walker === 'everyday' ? EVERYDAY_PACE_MPS
-        : previousWalker === answers.walker ? previous.speed_mps : null;
+    const speed = previousWalker === answers.walker ? previous.speed_mps : null;
     return {
         profile,
         needs: {
@@ -71,7 +69,7 @@ export function applyAnswers(answers: ProfileAnswers, previous: WalkingNeeds = D
 
 /** Reads the current settings back as answers, so editing the profile starts from what is set now. */
 export function answersFrom(profile: Profile, needs: WalkingNeeds): ProfileAnswers {
-    const walker: Walker = profile === 'senior' && (needs.speed_mps ?? 0) >= EVERYDAY_MIN_MPS ? 'everyday' : profile;
+    const walker: Walker = profile === 'senior' && (needs.speed_mps ?? 0) >= LEGACY_EVERYDAY_MIN_MPS ? 'everyday' : profile;
     const nearest = <T extends number>(value: number, options: readonly T[]) =>
         options.reduce((best, option) => Math.abs(option - value) < Math.abs(best - value) ? option : best, options[0]);
     return {
