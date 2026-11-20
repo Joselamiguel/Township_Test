@@ -402,10 +402,34 @@
         margin-inline: -.25rem;
         padding: .25rem;
     }
-    .tg[data-panel-minimized="true"]:not([data-view="saved"]) .tg-panel-body { display: none; }
-    .tg[data-panel-minimized="true"]:not([data-view="saved"]) .tg-sheet { flex: none; padding-block: .15rem; }
+    /* Three heights (minimised / part / full) that animate; the map above shrinks and grows with them. */
+    .tg-sheet {
+        flex: none;
+        height: var(--sheet-h);
+        max-height: none;
+        transition: height .34s cubic-bezier(.22, .9, .3, 1), padding .34s ease;
+        will-change: height;
+        --sheet-h: min(32dvh, 18rem);
+    }
+    .tg[data-panel="full"]:not([data-view="saved"]) .tg-sheet { --sheet-h: 78dvh; box-shadow: 0 -10px 30px rgba(20, 16, 30, .18); }
+    .tg[data-panel="min"]:not([data-view="saved"]) .tg-sheet { --sheet-h: 3.4rem; padding-block: .15rem; }
+    .tg-sheet.is-dragging { height: var(--sheet-drag); transition: none; }
+    .tg[data-panel="full"]:not([data-view="saved"]) .tg-map { min-height: 4rem; overflow: hidden; }
+    /* Floating map buttons get in the way of a thin map strip; fade them while the panel is fully open. */
+    .tg-map :is(.tg-map-controls, .tg-map-choice, .tg-map-fit, .tg-map-status, .tg-map-report, .leaflet-control-container, .maplibregl-ctrl-top-left, .maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right) {
+        transition: opacity .2s ease;
+    }
+    .tg[data-panel="full"]:not([data-view="saved"]) .tg-map :is(.tg-map-controls, .tg-map-choice, .tg-map-fit, .tg-map-status, .tg-map-report, .leaflet-control-container, .maplibregl-ctrl-top-left, .maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right) {
+        opacity: 0; pointer-events: none;
+    }
+    .tg-panel-body { transition: opacity .22s ease .08s, transform .3s cubic-bezier(.22, .9, .3, 1); }
+    .tg[data-panel="min"]:not([data-view="saved"]) .tg-sheet:not(.is-dragging) .tg-panel-body {
+        opacity: 0; transform: translateY(.75rem); pointer-events: none; visibility: hidden;
+        transition: opacity .15s ease, transform .2s ease, visibility 0s linear .2s;
+    }
+    .tg-panel-grip svg { transition: transform .3s ease; }
     .tg[data-view="saved"] .tg-map { display: none; }
-    .tg[data-view="saved"] .tg-sheet { flex: 1 1 auto; max-height: none; border-radius: 0; }
+    .tg[data-view="saved"] .tg-sheet { flex: 1 1 auto; height: auto; max-height: none; border-radius: 0; transition: none; }
 }
 @media (max-width: 1023px) and (max-height: 540px) {
     .tg { height: auto; min-height: 100dvh; overflow: visible; }
