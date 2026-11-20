@@ -109,7 +109,7 @@ export default function WalkingProfileSetup({ initial, firstRun, onSave, onClose
                             <Chips label="Steepest slope" value={answers.maxSlope} options={[5, 8, 12] as const}
                                 format={value => value === 5 ? 'Gentle only' : value === 8 ? 'Standard ramp' : 'Steeper is OK'} onChange={value => set('maxSlope', value)} />
                         </>}
-                        <p className="tg-note">You can change any of this later from <strong>Walking as…</strong> on the plan screen, or just for one walk under <strong>My walking needs</strong>.</p>
+                        <p className="tg-note">You can change any of this later by tapping <strong>Walking as…</strong> on the plan screen.</p>
                     </div>}
                 </div>
 
