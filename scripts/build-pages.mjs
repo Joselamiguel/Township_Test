@@ -13,9 +13,10 @@ if (basePath && !/^\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(basePath)) thr
 const exampleOnly=process.argv.includes('--example-only');
 if(exampleOnly&&process.env.GITHUB_ACTIONS)throw Error('Example-only validation cannot publish the production site.');
 const pilot=exampleOnly?null:await loadPagesPilot(resolve(root,'data/pasar-seni/bundle.json'));
-const availability=pagesPilotMetadata(pilot);
+const um=exampleOnly?null:await loadPagesPilot(resolve(root,'data/um-campus/bundle.json'),'um-campus');
+const availability=pagesPilotMetadata(pilot,um);
 const env = { ...process.env, NEXT_PUBLIC_SITE_MODE: 'pages', NEXT_PUBLIC_BASE_PATH: basePath,
-    NEXT_PUBLIC_KL_PILOT_AVAILABLE:pilot?'true':'false' };
+    NEXT_PUBLIC_KL_PILOT_AVAILABLE:pilot?'true':'false', NEXT_PUBLIC_UM_PILOT_AVAILABLE:um?'true':'false' };
 if(!pilot)console.log('KL source data is pending. Building the working Elmina example; KL navigation remains disabled until a real source bundle is added.');
 
 await mkdir(resolve(root, '.local'), { recursive: true });
@@ -27,7 +28,10 @@ await rm(publicData,{recursive:true,force:true});
 await writePublicSnapshot(publicData,snapshot); // Legacy bridge links and old packs.
 await writePublicSnapshot(resolve(publicData,'elmina'),snapshot);
 if(pilot)await writePublicPilot(resolve(publicData,'pasar-seni'),pilot);
-execFileSync(process.execPath,['scripts/build-planning-worker.mjs'],{cwd:root,stdio:'inherit'});
+if(um)await writePublicPilot(resolve(publicData,'um-campus'),um);
+for (const script of ['build-planning-worker', 'build-map-area']) {
+    execFileSync(process.execPath, [`scripts/${script}.mjs`], { cwd: root, stdio: 'inherit' });
+}
 execFileSync(process.execPath, ['node_modules/next/dist/bin/next', 'build'], { cwd: root, env, stdio: 'inherit' });
 await writeFile(resolve(root, 'out/.nojekyll'), '');
 await writeFile(resolve(root, 'out/site-config.json'), JSON.stringify({ mode: 'pages', base_path: basePath,

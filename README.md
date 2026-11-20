@@ -4,9 +4,11 @@ A pedestrian walking planner and footpath maintenance dashboard. Residents can c
 
 The app now runs on **Next.js → API routes → PostgreSQL/PostGIS**. It uses free, open-source software and the included OpenStreetMap snapshot. No hosted database account, API key or database subscription is required for local development.
 
-The primary study area is **Pasar Seni–Chinatown–Masjid Jamek**, with **Elmina bridges retained as an example**. The included real KL snapshot has **5,142 pedestrian segments, 2,090 places and 153 mapped facilities**, plus **2026 DOSM district population context**. Source dates, hashes and original downloads are retained. These are mapped features, with no invented field verification records. See [pilot setup and QGIS review](docs/pasar-seni-pilot.md).
+The planner covers **Pasar Seni–Chinatown–Masjid Jamek**, **Universiti Malaya campus** and the **Elmina bridges**. The central KL snapshot includes 5,142 pedestrian segments and district population context. The UM snapshot includes 2,513 segments, including 479 with recorded roof cover. See [Pasar Seni pilot setup](docs/pasar-seni-pilot.md) and [UM data sources](data/um-campus/README.md).
 
-The public [GitHub Pages site](https://roshanm75.github.io/Township_Test/) is an **interactive preview** of the walking planner, built from the included OSM snapshot. Explore, Plan, Walk and Saved provide personal needs, return walks, facility discovery, condition timelines, device walk history, comfort feedback, personal pace suggestions, offline packs and private condition reports. Shared maintenance reports and verification edits need the full server version below. See the [GitHub Pages deployment guide](docs/github-pages.md) and [everyday walking tools guide](docs/everyday-walking-tools.md).
+The resident map opens in 3D with a 2D switch. On phones, use the search field or a destination suggestion to open the route sheet. The rain-shelter option favours mapped roof cover on routes where that data is available. The weather cards show current temperature and the next five hourly rain forecasts from [Open-Meteo](https://open-meteo.com/en/docs).
+
+The public [GitHub Pages site](https://roshanm75.github.io/Township_Test/) is an **interactive preview** of the walking planner, built from the included OSM snapshot. Explore, Plan, Walk and Saved provide personal needs, return walks, facility discovery, condition timelines, device walk history, comfort feedback, personal pace suggestions and offline packs. The Reports sheet saves hazard reports on the device in the public preview. Shared maintenance reports and verification edits need the full server version below. See the [GitHub Pages deployment guide](docs/github-pages.md) and [everyday walking tools guide](docs/everyday-walking-tools.md).
 
 To build and test the public version without a database:
 
@@ -16,7 +18,7 @@ npm run build:pages
 npm run preview:pages
 ```
 
-The Pages build generates actual HTML/CSS/JavaScript in `out/`, with the `/Township_Test/` prefix and public source data. It never reads or exports the local database, or depends on live data-download services during CI. The committed KL bundle enables the pilot by default; Elmina remains selectable. `npm run data:rebuild` reproduces the bundle from the included compressed downloads without external requests. Missing KL data leaves that pilot disabled; corrupt or private source data still stops the build. `npm run build` continues to build the full server application.
+The Pages build generates actual HTML/CSS/JavaScript in `out/`, with the `/Township_Test/` prefix and public source data. It never reads or exports the local database, or depends on live data-download services during CI. Pasar Seni opens by default. The area selector offers UM and Elmina. Use `npm run data:rebuild` for Pasar Seni or `npm run data:rebuild:um` for UM to rebuild from the committed archives. Missing source data leaves the corresponding pilot pending. Invalid source bundles stop the build. `npm run build` continues to build the full server application.
 
 ## Local setup
 
@@ -30,12 +32,12 @@ npm run dev
 ```
 
 - `/` — app entry page
-- `/resident` — pedestrian walking planner
+- `/resident` — pedestrian walking planner, with `?area=um-campus` for the campus pilot
 - `/dashboard` — shared maintenance queue
 - `/verification` — map destinations, entrances and facilities; record dated, field-specific checks
 - `/api/health` — database, PostGIS version and graph counts
 
-`db:up` starts PostgreSQL 17/PostGIS 3.5, bound to the local loopback interface. `db:setup` creates the schema and imports pedestrian paths from the included Elmina `precinct.json` and the KL bundle when present. Without a KL bundle, `/resident?area=elmina` remains available; the KL API reports that its dataset has not been imported. A first setup needs Internet access to download packages, source data and the database image. Subsequent route planning and reports use the local database.
+`db:up` starts PostgreSQL 17/PostGIS 3.5, bound to the local loopback interface. `db:setup` creates the schema and imports the Elmina, Pasar Seni and UM pedestrian snapshots. APIs for a pilot without an imported dataset return a source availability error. A first setup needs Internet access to download packages, source data and the database image. Subsequent route planning and reports use the local database.
 
 For a one-command startup after installation, use `npm run dev:local`. To stop the database, run `npm run db:down`; its Docker volume retains the data.
 
@@ -65,9 +67,9 @@ No migrations or writes to an existing hosted database occur. `db/schema.sql` ta
 
 ## Pedestrian data
 
-The **Elmina example** contains **547 nodes and 602 pedestrian edges**, including 35 mapped crossings, from the supplied OpenStreetMap snapshot. The KL dataset has its own source-derived coverage counts and identifiers. Both exclude road carriageways and private/prohibited foot access. Shared cycleways, service paths and tracks require explicit public foot access.
+The **Elmina example** contains **547 nodes and 602 pedestrian edges**, including 35 mapped crossings, from the supplied OpenStreetMap snapshot. Pasar Seni and UM have separate source bundles and identifiers. All three route graphs use dedicated pedestrian paths and ways with compatible foot access. Shared cycleways, service paths and tracks require explicit public foot access.
 
-Sample start and destinations match the Elmina snapshot: Jambatan Pelangi Elmina and the Iconic Bridge of Elmina City are both reachable on its pedestrian network. The old Universiti Malaya sample locations belonged to a different area. Area boundaries/defaults live in `lib/pilots.ts`; Elmina example places remain in `lib/precinct.ts`. The KL importer derives places and its start from the actual source network. The planner reports no route when a chosen location is outside the mapped network or disconnected.
+Sample start and destinations match the Elmina snapshot: Jambatan Pelangi Elmina and the Iconic Bridge of Elmina City are both reachable on its pedestrian network. Area boundaries and starting locations live in `lib/pilots.ts`. The Pasar Seni and UM importers derive connected places and a starting point from their source networks. The planner reports no route when a chosen location is outside the mapped network or disconnected.
 
 Unknown shade, lighting and accessibility attributes remain unknown; routing assumptions are not field observations. See [data sources and import rules](docs/data-sources.md) for provenance, attribution and limitations.
 

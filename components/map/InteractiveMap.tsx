@@ -7,8 +7,9 @@ import type { WalkingAsset, VerificationRecord } from '@/lib/walking';
 import type { PathEdge } from '@/lib/routing';
 import { environmentSegments, environmentCoverage, type EnvironmentLayer } from '@/lib/environment';
 import { DEFAULT_ORIGIN } from '@/lib/precinct';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Pane, Marker, Popup, Polyline, Tooltip, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import type { FeatureCollection } from 'geojson';
 import 'leaflet/dist/leaflet.css';
 import { Plus, Minus, Route as RouteIcon, Layers } from 'lucide-react';
 
@@ -30,7 +31,7 @@ interface OverviewPin {
     detail?: string;
 }
 
-interface InteractiveMapProps {
+export interface InteractiveMapProps {
     routes?: RouteItem[];
     activeRouteId?: string;
     reports?: ReportMarker[];
@@ -56,6 +57,8 @@ interface InteractiveMapProps {
     selectedLocation?: [number, number];
     environment?: { edges: PathEdge[]; records: VerificationRecord[]; at: string };
     informationLayer?: EnvironmentLayer | 'routes';
+    showLayerControls?: boolean;
+    localBasemap?: string;
     onInformationLayerChange?: (layer: EnvironmentLayer | 'routes') => void;
     focusLocation?: [number, number];
     liveLocation?: [number, number];
@@ -64,6 +67,28 @@ interface InteractiveMapProps {
 function LocationPicker({ onSelect }: { onSelect?: (lat: number, lng: number) => void }) {
     useMapEvents({ click: event => onSelect?.(event.latlng.lat, event.latlng.lng) });
     return null;
+}
+
+function LocalBasemap({ url }: { url: string }) {
+    const [data, setData] = useState<FeatureCollection | null>(null);
+    useEffect(() => {
+        const controller = new AbortController();
+        fetch(url, { signal: controller.signal }).then(response => {
+            if (!response.ok) throw Error('Map source unavailable');
+            return response.json();
+        }).then(setData).catch(() => { /* Routes and pins are still available. */ });
+        return () => controller.abort();
+    }, [url]);
+
+    return data && <GeoJSON data={data} interactive={false}
+        attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+        style={feature => {
+            const kind = feature?.properties.kind;
+            if (kind === 'building') return { color: '#a9acb4', fillColor: '#c2c4ca', fillOpacity: 0.85, weight: 1 };
+            if (kind === 'green' || kind === 'water') return { stroke: false, fillColor: kind === 'water' ? '#b6dbe0' : '#cfdcc6', fillOpacity: 1 };
+            if (kind === 'street') return { color: '#fffefa', weight: 5 };
+            return { color: '#a8a392', opacity: 0.65, weight: 1, dashArray: '3 3' };
+        }} />;
 }
 
 const assetIcon = (kind: string) => L.divIcon({ className: '', iconSize: [28,28], iconAnchor: [14,14],
@@ -261,6 +286,7 @@ function MapBehavior({
 const DASH: Record<string, string | undefined> = {
     direct: undefined, // solid
     coolest: '18 12', // dashed
+    sheltered: '10 7 2 7', // dash-dot
     safest: '1 16', // dotted (round caps)
 };
 
@@ -283,6 +309,8 @@ export default function InteractiveMap({
     selectedLocation,
     environment,
     informationLayer,
+    showLayerControls = true,
+    localBasemap,
     onInformationLayerChange,
     focusLocation,
     liveLocation,
@@ -382,11 +410,12 @@ export default function InteractiveMap({
                 scrollWheelZoom
                 className="w-full h-full"
                 zoomControl={false}
+                preferCanvas={Boolean(localBasemap)}
             >
-                <TileLayer
+                {localBasemap ? <Pane name="pilot-basemap" style={{ zIndex: 250 }}><LocalBasemap url={localBasemap} /></Pane> : <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
+                />}
                 <LocationPicker onSelect={onLocationSelect} />
                 {segments.map(segment => {
                     const unknown = segment.value === null;
@@ -521,7 +550,7 @@ export default function InteractiveMap({
                     </>
                 )}
             </MapContainer>
-            {environment && <section aria-label="Map information layers" className="absolute left-3 top-3 z-[1100] max-h-[calc(100%-5.25rem)] w-56 max-w-[calc(100%-5.25rem)] overflow-y-auto rounded-xl border-2 border-slate-300 bg-white/95 p-2 text-slate-900 shadow-sm">
+            {environment && showLayerControls && <section aria-label="Map information layers" className="absolute left-3 top-3 z-[1100] max-h-[calc(100%-5.25rem)] w-56 max-w-[calc(100%-5.25rem)] overflow-y-auto rounded-xl border-2 border-slate-300 bg-white/95 p-2 text-slate-900 shadow-sm">
                 <label className="flex items-center gap-2 text-sm font-bold"><Layers size={18} className="shrink-0 text-emerald-800" aria-hidden />
                     <select aria-label="Map information" value={layer} onChange={e => {
                         const value = e.target.value as EnvironmentLayer | 'routes';

@@ -6,12 +6,12 @@ The text-only site came from Pages publishing the repository root with its legac
 
 ## What works in the public preview
 
-- Interactive map, sample Elmina walks and pedestrian-only routes.
+- 3D and 2D walking maps for Pasar Seni, UM campus and Elmina.
 - Walking needs and saved preferences; route comparisons, time-of-day shade/lighting and honest confidence bars.
 - Rest/budget constraints and entrance selection using the available source records. There are no invented verified seats or surveys.
 - Reachable-place discovery and shared walk links that preserve the project URL prefix.
 - Mapped-place provenance and read-only verification coverage.
-- Optional weather forecasts requested directly from Open-Meteo. An outage stays explicitly unavailable.
+- Temperature and hourly rain forecast cards requested directly from Open-Meteo. The Reports sheet saves location, category and optional notes on the device.
 - Time-budget return walks, condition timelines and facility-first searches, using the actual mapped facilities and existing constraints.
 - Device-only walk recording, comfort feedback, history and opt-in personal pace suggestions.
 - Offline walk collections and downloadable self-contained HTML packs with route sketches and dated conditions; no bulk tile caching or new offline routing is promised.
@@ -23,7 +23,7 @@ The default `npm run dev` / `npm run build` / `npm start` application retains it
 
 ## Build locally
 
-The build retains the actual Elmina source example and uses the included, validated `data/pasar-seni/bundle.json` to enable KL as the default. `npm run data:rebuild` reproduces that real-data snapshot from the included compressed source files without external downloads. If the KL bundle is missing, the production build succeeds with Elmina as default and clearly labels KL as data pending; direct KL links explain its status instead of requesting missing JSON. A malformed or private bundle still fails validation. See [pilot setup](pasar-seni-pilot.md). Do not deploy test fixtures as the pilot.
+The build retains the actual Elmina source example and uses the included, validated `data/pasar-seni/bundle.json` to enable KL as the default. `npm run data:rebuild` reproduces that real-data snapshot from the included compressed source files without external downloads. The UM campus bundle is validated separately and enabled through `?area=um-campus`. If Pasar Seni is pending, UM becomes the default when its bundle is present. Elmina is the default if both bundles are pending. A malformed or private bundle still fails validation. See [pilot setup](pasar-seni-pilot.md). Do not deploy test fixtures as the pilot.
 
 Use Node.js 24 and the existing lockfile:
 
@@ -36,7 +36,7 @@ npm run preview:pages
 
 `build:pages` imports the supplied `precinct.json` with the existing strict pedestrian importer, creates public snapshot files under the ignored `public/pilot/` directory, then builds Next.js with `output: 'export'`. Pages/layouts use `.tsx`; the Pages-only `pageExtensions` setting excludes server `.ts` API handler entry points from this build. The full server build uses the original extensions and keeps its APIs. No source files are renamed or deleted to switch modes.
 
-The script sets `NEXT_PUBLIC_SITE_MODE=pages` and `NEXT_PUBLIC_BASE_PATH=/Township_Test`. It derives `NEXT_PUBLIC_KL_PILOT_AVAILABLE` from the validated bundle and records available areas/default/status in `out/site-config.json`; no manual availability variable is needed in GitHub settings. In GitHub Actions the repository name determines the prefix; a repository named `owner.github.io` uses the domain root. To test a different prefix, provide `NEXT_PUBLIC_BASE_PATH` to the build command (an empty value builds for the root). These are public build settings, not database credentials. Changing them requires rebuilding.
+The script sets `NEXT_PUBLIC_SITE_MODE=pages` and `NEXT_PUBLIC_BASE_PATH=/Township_Test`. It derives `NEXT_PUBLIC_KL_PILOT_AVAILABLE` and `NEXT_PUBLIC_UM_PILOT_AVAILABLE` from the validated bundles and records available areas/default/status in `out/site-config.json`; no manual availability variable is needed in GitHub settings. In GitHub Actions the repository name determines the prefix; a repository named `owner.github.io` uses the domain root. To test a different prefix, provide `NEXT_PUBLIC_BASE_PATH` to the build command (an empty value builds for the root). These are public build settings, not database credentials. Changing them requires rebuilding.
 
 Next.js prefixes links and assets, and the snapshot provider prefixes JSON requests. `trailingSlash` exports deep links such as `resident/index.html`; `.nojekyll` protects underscore assets if the output is hosted with a branch-based static server. The planning clock follows the visitor's current time rather than the snapshot's build time.
 

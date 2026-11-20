@@ -4,12 +4,12 @@ import { DEFAULT_NEEDS, type WalkingNeeds, type WalkingAsset, type WalkingData, 
 import { evidenceFor, isConfirmed, malaysiaHour, openingAt } from './verification.ts';
 import { metres, pointAt, projectPoint, sliceLine } from './walking-geometry.ts';
 
-const MODES: Mode[] = ['direct', 'coolest', 'safest'];
+const MODES: Mode[] = ['direct', 'coolest', 'sheltered', 'safest'];
 // Suppress sub-millisecond spherical interpolation noise at exact rest boundaries.
 const TIME_EPS = .001;
 const FIELD_LABELS: Record<string, string> = { path_open: 'path condition', surface_rating: 'surface condition', has_steps: 'steps',
     slope_pct: 'slope', crossing_type: 'crossing type', has_kerb_ramp: 'kerb ramps', shade_morning: 'morning shade',
-    shade_midday: 'midday shade', shade_afternoon: 'afternoon shade', lit_ratio: 'lighting' };
+    shade_midday: 'midday shade', shade_afternoon: 'afternoon shade', lit_ratio: 'lighting', covered: 'roof cover' };
 
 export function normaliseNeeds(value: unknown): WalkingNeeds {
     const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -115,6 +115,7 @@ function missingFor(edge: PathEdge, input: PlanningInput, data: WalkingData, mod
     }
     const slot = slotForHour(malaysiaHour(input.departure_at));
     if (mode === 'coolest' && slot !== 'night' && !(edge.covered && isConfirmed(e, 'covered'))) needed.push(`shade_${slot}`);
+    if (mode === 'sheltered') needed.push('covered');
     if (slot === 'night') needed.push('lit_ratio');
     return needed.filter(field => !isConfirmed(e, field)).map(field => FIELD_LABELS[field] ?? field);
 }
@@ -313,7 +314,9 @@ export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingD
     let searchLimited = false, closedAtArrival = false;
     const speed = input.needs.speed_mps ?? PROFILES[input.profile].speed_mps;
     const slot = slotForHour(malaysiaHour(input.departure_at));
+    const hasCover = [...prepared.graph.edges.values()].some(edge => edge.covered === true);
     for (const mode of modes) {
+        if (mode === 'sheltered' && !hasCover) continue;
         let bestCost = Infinity;
         for (const entrance of candidates) {
             const { values, evidence } = assetFacts(entrance, data, input.departure_at);
@@ -329,6 +332,7 @@ export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingD
             if (!found) continue;
             if ('limited' in found) { searchLimited = true; continue; }
             const route = summarise(prepared, found.final, entrance, input, data, ctx);
+            if (mode === 'sheltered' && route.length_m - route.unsheltered_m < 1) continue;
             if (input.needs.verified_only && route.suitability !== 'green') continue;
             // An entrance's opening window must also cover actual arrival.
             if (openingAt(values.opening_hours, route.arrival_at) === false) { closedAtArrival = true; continue; }
@@ -337,7 +341,8 @@ export function planJourney(nodes: PathNode[], edges: PathEdge[], data: WalkingD
         }
     }
     const available = MODES.filter(m => routes[m] && !(slot === 'night' && m === 'coolest'));
-    const recommended = available.sort((a, b) => {
+    const standard = available.filter(mode => mode !== 'sheltered');
+    const recommended = (standard.length ? standard : available).sort((a, b) => {
         const ra = routes[a]!, rb = routes[b]!;
         const score = (r: JourneyRoute) => (r.suitability === 'green' ? 0 : 10000) + r.unchecked_segments * 10
             + r.total_min + (slot === 'night' ? r.dark_m / 10 : r.uncovered_m / (feelsLike != null && feelsLike >= 32 ? 20 : 50));
@@ -405,7 +410,7 @@ export function planReturnWalk(nodes: PathNode[], edges: PathEdge[], data: Walki
     if (!prepared) return { routes: {}, recommended: null, reasons: ['Your start is more than 50 metres from a mapped pedestrian path.'] };
     const routes: JourneyPlan['routes'] = {};
     const slot = slotForHour(malaysiaHour(request.departure_at));
-    for (const mode of MODES.filter(m => !(slot === 'night' && m === 'coolest'))) {
+    for (const mode of MODES.filter(m => m !== 'sheltered' && !(slot === 'night' && m === 'coolest'))) {
         let best = Infinity;
         const ctx: CostContext = { mode, profile: input.profile, slot, speedMps: speed, strictUnknown: needs.verified_only,
             hazards: indexHazards(hazards), heatMultiplier: feelsLike != null && feelsLike >= 32 ? 1.5 : 1 };

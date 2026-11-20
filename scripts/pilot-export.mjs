@@ -5,21 +5,23 @@ import { pointInPilot } from '../lib/pilots.ts';
 import { gisLayers } from './pilot-snapshot.mjs';
 
 /** Missing source data leaves KL pending. Corrupt or private data still stops the build. */
-export async function loadPagesPilot(path){
+export async function loadPagesPilot(path,area='pasar-seni'){
     let contents;
     try{contents=await readFile(path,'utf8');}
     catch(error){if(error.code==='ENOENT')return null;throw error;}
-    const bundle=JSON.parse(contents);validatePilotSnapshot(bundle);return bundle;
+    const bundle=JSON.parse(contents);validatePilotSnapshot(bundle,area);return bundle;
 }
 
-export function pagesPilotMetadata(pilot){
-    return {areas:pilot?['pasar-seni','elmina']:['elmina'],default_area:pilot?'pasar-seni':'elmina',
-        pilot_status:{'pasar-seni':pilot?'available':'awaiting-source-data',elmina:'available'}};
+export function pagesPilotMetadata(kl,um){
+    const areas=[...(kl?['pasar-seni']:[]),...(um?['um-campus']:[]),'elmina'];
+    return {areas,default_area:areas[0],
+        pilot_status:{'pasar-seni':kl?'available':'awaiting-source-data','um-campus':um?'available':'awaiting-source-data',elmina:'available'}};
 }
 
 /** Fail before a source build could publish private records or a mismatched graph. */
-export function validatePilotSnapshot(bundle){
-    assert.equal(bundle.area_id,'pasar-seni','Use the Pasar Seni source bundle.');
+export function validatePilotSnapshot(bundle,area=bundle.area_id){
+    assert.ok(['pasar-seni','um-campus'].includes(bundle.area_id),'Unknown source pilot.');
+    assert.equal(bundle.area_id,area,'Source bundle belongs to another pilot.');
     const {graph,walking,context}=bundle;
     assert.ok(graph.nodes.length&&graph.edges.length,'The pilot needs a real pedestrian network.');
     assert.equal(graph.source.area_id,bundle.area_id);

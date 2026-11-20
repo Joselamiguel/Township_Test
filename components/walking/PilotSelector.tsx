@@ -1,7 +1,11 @@
 'use client';
 import { PILOTS,isPilotAvailable,type PilotId } from '@/lib/pilots';
 export default function PilotSelector({area,onChange}:{area:PilotId;onChange:(id:PilotId)=>void}){
-    return <label className="block text-sm font-bold text-slate-900">Walking area<select aria-label="Walking area" value={area} onChange={e=>onChange(e.target.value as PilotId)} className="mt-1 min-h-11 w-full rounded-xl border-2 border-slate-300 bg-white px-3 py-2 font-semibold">
-        <option value="pasar-seni" disabled={!isPilotAvailable('pasar-seni')}>{PILOTS['pasar-seni'].name} · {isPilotAvailable('pasar-seni')?'pilot':'data pending'}</option><option value="elmina">Elmina bridges · guided example</option>
+    return <label className="block min-w-0 text-sm font-bold text-slate-900"><span className="sr-only">Walking area</span><select value={area} onChange={e=>onChange(e.target.value as PilotId)} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-2 py-2 font-semibold">
+        {Object.values(PILOTS).map(pilot => (
+            <option key={pilot.id} value={pilot.id} disabled={!isPilotAvailable(pilot.id)}>
+                {pilot.short_name}{isPilotAvailable(pilot.id) ? '' : ' · data pending'}
+            </option>
+        ))}
     </select></label>;
 }

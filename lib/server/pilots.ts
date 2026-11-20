@@ -1,7 +1,7 @@
 import 'server-only';
 import { getPool } from './postgres.ts';
 import { RequestError } from './validation.ts';
-import { isPilot, type PilotId, type PilotContext } from '../pilots.ts';
+import { isPilot, PILOTS, type PilotId, type PilotContext } from '../pilots.ts';
 import { DEFAULT_ORIGIN } from '../precinct.ts';
 
 export function validateArea(value: unknown, fallback: PilotId = 'elmina'): PilotId {
@@ -12,7 +12,7 @@ export function requestArea(request: Request) { return validateArea(new URL(requ
 export async function pilotContext(area: PilotId): Promise<PilotContext> {
     const result=await getPool().query('SELECT value FROM app_metadata WHERE key=$1',[`pilot:${area}:context`]);
     if(result.rows[0])return JSON.parse(result.rows[0].value);
-    if(area!=='elmina')throw new RequestError('The central KL dataset has not been imported into this server yet.',503);
+    if(area!=='elmina')throw new RequestError(`The ${PILOTS[area].short_name} dataset has not been imported into this server yet.`,503);
     const [paths,places]=await Promise.all([
         getPool().query('SELECT count(*)::int AS paths,(SELECT count(*)::int FROM path_nodes WHERE area_id=$1) AS nodes,count(*) FILTER(WHERE is_crossing)::int AS crossings FROM path_edges WHERE area_id=$1',[area]),
         getPool().query('SELECT kind,count(*)::int AS count FROM walking_assets WHERE area_id=$1 GROUP BY kind',[area]),

@@ -1,0 +1,9 @@
+{
+  "url": "https://api.openstreetmap.org/api/0.6/map?bbox=101.499,3.170,101.519,3.185",
+  "fetched_at": "2026-11-20T12:12:48.553358+00:00",
+  "osm_xml_sha256": "e61670f5ba667761e19c676fb11bd1de299229d5f83a1bcc77fbc4718738af39",
+  "json_sha256": "c1809abad0185f5fecb1cccd55c7f0b451e077390bbe8a4d0e4133200e50d7e0",
+  "license": "ODbL",
+  "attribution": "\u00a9 OpenStreetMap contributors",
+  "ways": 1537
+}

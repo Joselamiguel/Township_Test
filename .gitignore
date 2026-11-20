@@ -5,6 +5,7 @@
 /.local/
 /public/pilot/
 /public/planning-worker/
+/public/map-area/
 /.pnp
 .pnp.*
 .yarn/*
