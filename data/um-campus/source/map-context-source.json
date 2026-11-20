@@ -1,0 +1,25 @@
+{
+  "fetched_at": "2026-11-20T12:55:59.202815+00:00",
+  "license": "ODbL",
+  "attribution": "© OpenStreetMap contributors",
+  "sources": [
+    {
+      "url": "https://api.openstreetmap.org/api/0.6/map?bbox=101.634000,3.109000,101.652500,3.122500",
+      "sha256": "3f502f29b080899f2044b3e5fb275d2df36ad520618118f459c79cd1bd66e0a1"
+    },
+    {
+      "url": "https://api.openstreetmap.org/api/0.6/map?bbox=101.634000,3.122500,101.652500,3.136000",
+      "sha256": "f32b4ce87f8c8f5406cec02dfc118f892a3dad5aac3c842a0b724c55c51b78e8"
+    },
+    {
+      "url": "https://api.openstreetmap.org/api/0.6/map?bbox=101.652500,3.109000,101.671000,3.122500",
+      "sha256": "81d6f2b2c901b6e8dd849f2d31b7f0ba096c6f5ebe6a37b4493c8a58c361b13f"
+    },
+    {
+      "url": "https://api.openstreetmap.org/api/0.6/map?bbox=101.652500,3.122500,101.671000,3.136000",
+      "sha256": "58cd3290d84de323fa4ef8885ea57162f3ae6ff9f6a105d81764b2a7a8e0e578"
+    }
+  ],
+  "json_sha256": "7adfdb400e4f1b391c0ece6831f24fabe86864c0dda9f1335416b4109e988878",
+  "ways": 1622
+}

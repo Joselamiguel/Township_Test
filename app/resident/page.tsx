@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams,useRouter } from 'next/navigation';
 import {
-    MapPin, Navigation, LocateFixed, Search, CloudRain, Sun, X, Send, Share2, Check,
+    MapPin, Navigation, LocateFixed, Search, CloudRain, Sun, X, Send, Share2, Check, ChevronDown, CircleDot,
     Footprints, Umbrella, Lightbulb, Ban, Accessibility,
     AlertTriangle, Phone, MessageCircle, Copy, Volume2, Compass, Bookmark, Route as RouteIcon,
 } from 'lucide-react';
@@ -52,7 +52,9 @@ import { usePlannerResult } from '@/lib/use-planner';
 import { metres } from '@/lib/walking-geometry';
 
 
-import ResidentMap from '@/components/map/ResidentMap';
+import ResidentMap, { type MapMode } from '@/components/map/ResidentMap';
+import PanelGrip from '@/components/walking/PanelGrip';
+import { presetStartPoints, type StartPoint } from '@/lib/start-points';
 import WeatherStrip from '@/components/walking/WeatherStrip';
 import './resident.css';
 
@@ -97,9 +99,9 @@ function readDeviceHazards(area: PilotId): DeviceHazard[] {
 
 type Step = 'where' | 'route' | 'walking';
 type TextScale = 'normal' | 'large' | 'xlarge';
-type Prefs = { scale: TextScale; highContrast: boolean; reduceMotion: boolean; vibrate: boolean; speak: boolean };
+type Prefs = { mapMode: MapMode; scale: TextScale; highContrast: boolean; reduceMotion: boolean; vibrate: boolean; speak: boolean };
 
-const DEFAULT_PREFS: Prefs = { scale: 'normal', highContrast: false, reduceMotion: false, vibrate: true, speak: false };
+const DEFAULT_PREFS: Prefs = { mapMode: '3d', scale: 'normal', highContrast: false, reduceMotion: false, vibrate: true, speak: false };
 const PREFS_KEY = 'townshipgo:prefs';
 const SCALE_PCT: Record<TextScale, string> = { normal: '100%', large: '112.5%', xlarge: '125%' };
 
@@ -205,6 +207,7 @@ function ResidentPageContent() {
     const [destId, setDestId] = useState<string>(searchParams.get('destId') || initialWalk.destination || '');
     const [placeQuery, setPlaceQuery] = useState('');
     const [searchOpen, setSearchOpen] = useState(false);
+    const [showStartPicker, setShowStartPicker] = useState(false);
     const [pilotData,setPilotData]=useState<PilotContext|null>(null);
     const [startingWalk,setStartingWalk]=useState(false);
     const [profile, setProfile] = useState<Profile>(() => {
@@ -365,6 +368,8 @@ function ResidentPageContent() {
     const slot: TimeSlot = slotForHour(malaysiaHour(planningTime));
     const isNight = slot === 'night';
     const graph = useMemo(() => buildGraph(nodes, edges), [nodes, edges]);
+    const startPoints = useMemo(() => pilotData && sourceWalkingData ? presetStartPoints(pilotData, sourceWalkingData.assets, graph) : [],
+        [pilotData, sourceWalkingData, graph]);
     const places = useMemo(() => walkingData?.assets.filter(a => ['destination', 'transit', 'toilet', 'water', 'rest', 'shelter'].includes(a.kind)) ?? [], [walkingData]);
     const destination = places.find(a => a.id === destId || a.external_id === destId) ?? (exactDestination ? null : places.find(a=>a.id===pilotData?.featured_ids[0])??places[0]) ?? null;
     const currentDest = destination ? { id: destination.external_id || destination.id, name: destination.name, coords: [destination.lat, destination.lng] as [number, number] } : {id:'',name:exactDestination||'Choose a mapped place',coords:configuration.centre};
@@ -462,7 +467,9 @@ function ResidentPageContent() {
                 }
                 initialOriginUsed.current = true;
                 setUserCoords(coords);
+                setMapFocus(undefined);
                 setUsingGPS(true);
+                setShowStartPicker(false);
             },
             () => {
                 setGeoBusy(false);
@@ -472,10 +479,14 @@ function ResidentPageContent() {
         );
     }
 
-    function useDefaultOrigin() {
-        setUserCoords(pilotData?.origin.coordinates??configuration.centre);
+    function chooseStart(point: StartPoint) {
+        initialOriginUsed.current = true;
+        setUserCoords(point.coordinates);
         setUsingGPS(false);
         setGeoMsg(null);
+        setMapFocus(undefined);
+        setPanelExpanded(false);
+        setShowStartPicker(false);
         buzz();
     }
 
@@ -695,9 +706,9 @@ function ResidentPageContent() {
     }, [step]);
 
     /* ---------- Derived display values ---------- */
-    const defaultOrigin = pilotData?.origin.coordinates ?? configuration.centre;
-    const isDefaultOrigin = userCoords[0] === defaultOrigin[0] && userCoords[1] === defaultOrigin[1];
-    const originLabel = usingGPS ? 'Your location' : isDefaultOrigin ? configuration.origin_label : 'Your chosen starting point';
+    const selectedStart = startPoints.find(point => Math.abs(point.coordinates[0] - userCoords[0]) < 1e-7
+        && Math.abs(point.coordinates[1] - userCoords[1]) < 1e-7);
+    const originLabel = usingGPS ? 'Your location' : selectedStart?.label ?? (loadingDb ? configuration.origin_label : 'Your chosen starting point');
 
     function selectSearchResult(place: WalkingAsset) {
         chooseDest(place.external_id || place.id);
@@ -720,7 +731,7 @@ function ResidentPageContent() {
     /* ---------------------------------------------------------------- */
 
     return (
-        <div data-view={view} data-expanded={panelExpanded} className={`tg font-sans relative w-full max-w-md mx-auto h-[100dvh] flex flex-col overflow-hidden shadow-2xl ${prefs.highContrast ? 'hc' : ''} ${prefs.reduceMotion ? 'rm' : ''}`}>
+        <div data-view={view} data-expanded={panelExpanded} className={`tg font-sans relative w-full h-[100dvh] flex flex-col overflow-hidden shadow-2xl ${prefs.highContrast ? 'hc' : ''} ${prefs.reduceMotion ? 'rm' : ''}`}>
 
             <div className="tg-topbar">
             <a href="#walk-planning" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[3000] focus:rounded-xl focus:bg-white focus:p-3 focus:font-bold text-slate-900">Skip to walk planning</a>
@@ -732,6 +743,10 @@ function ResidentPageContent() {
                 <button className="tg-iconbtn" onClick={() => setShowSettings(true)} aria-label="Text size and display settings">Aa</button>
             </header>
             {view !== 'saved' && view !== 'walk' && (
+                <div className="tg-trip-fields">
+                <button type="button" className="tg-start-field" onClick={() => { setSearchOpen(false); setShowStartPicker(true); }} aria-haspopup="dialog">
+                    <CircleDot size={19} aria-hidden /><span>From</span><strong>{originLabel}</strong><ChevronDown size={16} aria-hidden />
+                </button>
                 <form className="tg-search" onSubmit={event => {
                     event.preventDefault();
                     if (searchResults[0]) selectSearchResult(searchResults[0]);
@@ -761,8 +776,9 @@ function ResidentPageContent() {
                         ) : <p role="status">{loadingDb ? 'Loading mapped places…' : 'No mapped places match this search.'}</p>}
                     </div>}
                 </form>
+                </div>
             )}
-            {geoMsg && <p className="tg-banner" role="status">{geoMsg}</p>}
+            {geoMsg && !showStartPicker && <p className="tg-banner" role="status">{geoMsg}</p>}
 
             {dataError && (
                 <div role="alert" className="tg-banner">
@@ -778,6 +794,8 @@ function ResidentPageContent() {
             <div className="tg-map">
                 <ResidentMap
                     area={area}
+                    mapMode={prefs.mapMode === '2d' ? '2d' : '3d'}
+                    onMapModeChange={mode => setPref('mapMode', mode)}
                     routes={mapRoutes}
                     activeRouteId={activeRoute?.mode ?? ''}
                     reports={mapReports}
@@ -801,9 +819,8 @@ function ResidentPageContent() {
             </div>
 
             <section id="walk-planning" aria-label="Walk planning" tabIndex={-1} className="tg-sheet">
-                <div className="tg-sheet-handle" aria-hidden />
-                {(view === 'explore' || view === 'walk') && <button type="button" className="tg-text-action lg:hidden"
-                    aria-expanded={panelExpanded} onClick={() => setPanelExpanded(expanded => !expanded)}>{panelExpanded ? 'Show map' : 'Expand panel'}</button>}
+                {view !== 'saved' && !pickingHazard && <PanelGrip expanded={panelExpanded} onChange={setPanelExpanded} />}
+                <div id="walking-panel">
                 {libraryMessage && <div role="status" className="tg-note mb-3"><p>{libraryMessage}</p><button className="min-h-11 text-sm font-bold underline" onClick={() => setLibraryMessage(null)}>Dismiss message</button></div>}
                 {view === 'explore' && <ExploreWalks nodes={nodes} edges={edges} data={walkingData} request={toolRequest} hazards={hazards} onChoose={chooseFacility} onReturn={planReturn}
                     onLocate={handleGetLocation} locating={geoBusy} locationLabel={originLabel} locationMessage={geoMsg}
@@ -814,15 +831,11 @@ function ResidentPageContent() {
 
                 {view === 'plan' && step === 'where' && (
                     <div className="tg-stack">
-                        <div className="tg-sheet-row">
-                            <div><p className="tg-label">Starting from</p><p className="font-bold">{originLabel}</p></div>
-                            {!isDefaultOrigin && <button type="button" className="tg-text-action" onClick={useDefaultOrigin}>Use area start</button>}
-                        </div>
                         {suggestedPlaces.length > 0 && <div className="tg-suggestions" aria-label="Suggested destinations">
                             {suggestedPlaces.map(place => <button key={place.id} type="button" onClick={() => selectSearchResult(place)}><MapPin size={15} aria-hidden />{place.name}</button>)}
                         </div>}
                         <WeatherStrip weather={weather} now={planningNow} />
-                        <details className="tg-details" onToggle={event => setPanelExpanded(event.currentTarget.open)}>
+                        <details className="tg-details">
                             <summary>Walking options and area data</summary>
                             <div className="tg-stack mt-3">
                                 <div role="group" aria-label="Who is walking" className="grid grid-cols-2 gap-2">
@@ -922,12 +935,36 @@ function ResidentPageContent() {
                         <div className="grid grid-cols-2 gap-2"><button className="tg-btn" onClick={openShare}><Share2 size={20} aria-hidden />Share</button><a className="tg-btn" href={`tel:${EMERGENCY_NUMBER}`}><Phone size={20} aria-hidden />Call for help</a></div>
                     </div>}
                 </div>}
+                </div>
             </section>
             <nav className="tg-tabs" aria-label="Walking sections">{([
                 ['explore','Explore',Compass],['plan','Plan',RouteIcon],['walk','Walk',Navigation],['saved','Saved',Bookmark],
             ] as const).map(([id,label,Icon]) => <button key={id} aria-current={view === id ? 'page' : undefined} onClick={() => { setView(id); setSearchOpen(false); setPanelExpanded(false); if (id === 'plan' && step === 'walking') setStep('route'); requestAnimationFrame(() => document.getElementById('walk-planning')?.focus({preventScroll:true})); }}><Icon size={21} aria-hidden />{label}{id === 'walk' && walkSession && !sessionFinished ? ' •' : ''}</button>)}<button type="button" onClick={openReport}><AlertTriangle size={21} aria-hidden />Reports</button></nav>
 
             {/* ---------------- Dialogs ---------------- */}
+
+            {showStartPicker && (
+                <Sheet title="Choose a starting point" onClose={() => setShowStartPicker(false)}>
+                    <div className="tg-stack">
+                        <button type="button" className="tg-btn" onClick={handleGetLocation} disabled={geoBusy}>
+                            <LocateFixed size={19} aria-hidden />{geoBusy ? 'Finding your location…' : 'Use my location'}
+                        </button>
+                        {geoMsg && <p className="tg-note tg-warnbox" role="status">{geoMsg}</p>}
+                        {startPoints.length > 0 ? (
+                            <ul className="tg-start-list" aria-label="Mapped starting points">
+                                {startPoints.map(point => <li key={point.id}>
+                                    <button type="button" className="tg-card" aria-pressed={!usingGPS && selectedStart?.id === point.id}
+                                        onClick={() => chooseStart(point)}>
+                                        {point.id === 'area-start' ? <CircleDot size={18} aria-hidden /> : <MapPin size={18} aria-hidden />}
+                                        <span>{point.label}</span>
+                                        {!usingGPS && selectedStart?.id === point.id && <Check size={18} aria-hidden />}
+                                    </button>
+                                </li>)}
+                            </ul>
+                        ) : <p className="tg-small" role="status">{loadingDb ? 'Loading mapped starting points…' : 'Starting points are unavailable.'}</p>}
+                    </div>
+                </Sheet>
+            )}
 
             {showSettings && (
                 <Sheet title="Text and display" onClose={() => setShowSettings(false)}>

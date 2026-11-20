@@ -409,3 +409,61 @@
     .tg-dialog { inset: 0; margin: auto; border-radius: 1.25rem; }
 }
 .tg.hc :is(.tg-weather-card, .tg-route-card, .tg-search-input, .tg-report-categories label span) { border-color: #000; }
+
+.tg-trip-fields {
+    display: grid;
+    gap: .34rem;
+}
+.tg-start-field {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    min-height: 2.75rem;
+    min-width: 0;
+    margin: 0 .75rem;
+    padding: 0 .7rem;
+    text-align: left;
+    color: var(--ink);
+    background: #fff;
+    border: var(--bw) solid var(--line);
+    border-radius: .85rem;
+}
+.tg-start-field svg { flex: none; color: var(--brand-ink); }
+.tg-start-field span { color: var(--muted); font-size: .79rem; font-weight: 720; }
+.tg-start-field strong {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: .9rem;
+}
+.tg-start-list { display: grid; gap: .42rem; }
+.tg-start-list button { min-height: 2.85rem; font-weight: 680; }
+.tg-start-list button span { flex: 1; }
+.tg-start-list button svg { flex: none; color: var(--brand-ink); }
+.tg-panel-grip {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: .16rem;
+    width: 100%;
+    min-height: 2.75rem;
+    margin-bottom: .2rem;
+    border-radius: .7rem;
+    color: var(--brand-ink);
+    font-size: .78rem;
+    font-weight: 800;
+    touch-action: none;
+    user-select: none;
+}
+.tg-panel-grip > span:last-child { display: flex; align-items: center; gap: .2rem; }
+.tg-panel-grip-bar { width: 2.15rem; height: .23rem; background: #9a95a3; border-radius: 99px; }
+@media (max-width: 390px) {
+    .tg-start-field { margin-inline: .55rem; }
+}
+@media (min-width: 1024px) {
+    .tg-trip-fields { grid-template-columns: minmax(16rem, 22rem) minmax(16rem, 29rem); }
+    .tg-trip-fields .tg-search { max-width: none; padding-left: 0; }
+    .tg-start-field { margin: 0 0 .65rem 1rem; }
+    .tg-panel-grip { display: none; }
+}
