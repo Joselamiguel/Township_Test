@@ -4,11 +4,7 @@ import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams,useRouter } from 'next/navigation';
-import {
-    MapPin, Navigation, LocateFixed, Search, CloudRain, Sun, X, Send, Share2, Check, ChevronDown, CircleDot,
-    Footprints, Umbrella, Lightbulb, Ban, Accessibility,
-    AlertTriangle, Phone, MessageCircle, Copy, Volume2, Compass, Bookmark, Route as RouteIcon,
-} from 'lucide-react';
+import { MapPin, Navigation, LocateFixed, Search, CloudRain, Sun, X, Send, Share2, Check, ChevronDown, CircleDot, Footprints, Umbrella, Lightbulb, Ban, Accessibility, AlertTriangle, Phone, MessageCircle, Copy, Volume2, Compass, Bookmark, Route as RouteIcon, UserRound, Pencil } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { loadGraph as fetchGraph, loadHazards, loadReports, submitReport, loadWalkingData, loadWeather,loadPilotContext } from '@/lib/api';
 import { IS_PAGES_PREVIEW, sitePath } from '@/lib/site';
@@ -57,6 +53,8 @@ import PanelGrip, { type PanelState } from '@/components/walking/PanelGrip';
 import { presetStartPoints, type StartPoint } from '@/lib/start-points';
 import WeatherStrip from '@/components/walking/WeatherStrip';
 import HazardPhotoInput from '@/components/resident/HazardPhotoInput';
+import WalkingProfileSetup from '@/components/resident/WalkingProfileSetup';
+import { SETUP_KEY, answersFrom, applyAnswers, profileSummary, shouldOfferSetup, type ProfileAnswers } from '@/lib/walking-profile';
 import { photoDescription, type PhotoReading } from '@/lib/photo-hazard';
 import './resident.css';
 
@@ -259,6 +257,11 @@ function ResidentPageContent() {
     const [view, setView] = useState<'explore' | 'plan' | 'walk' | 'saved'>(walkSession && !initialWalk.fromLink ? 'walk' : 'plan');
     const [returning, setReturning] = useState(searchParams.get('return') === '1');
     const [savingPack, setSavingPack] = useState(false);
+    // First visit asks who is walking and what they need, then reuses it for every walk.
+    const [setupOpen, setSetupOpen] = useState<'first' | 'edit' | null>(() => {
+        try { return shouldOfferSetup(localStorage.getItem(SETUP_KEY), searchParams.has('profile') || searchParams.has('needs')) ? 'first' : null; }
+        catch { return null; }
+    });
     const [panelState, setPanelState] = useState<PanelState>(view === 'walk' ? 'min' : 'partial');
     const panelMinimized = panelState === 'min';
     // Showing new content opens the panel to part height; minimising keeps the old behaviour.
@@ -448,6 +451,19 @@ function ResidentPageContent() {
         setExactDestination(places.find(a => a.id === id || a.external_id === id)?.name ?? 'Selected place');
         setEntranceId('');
         buzz();
+    }
+    function saveWalkingProfile(answers: ProfileAnswers) {
+        const next = applyAnswers(answers, needs, answersFrom(profile, needs).walker);
+        setProfile(next.profile);
+        setNeeds(normaliseNeeds(next.needs));
+        setChosenMode(null);
+        try { localStorage.setItem(SETUP_KEY, 'done'); } catch { /* storage may be unavailable */ }
+        setSetupOpen(null);
+        buzz();
+    }
+    function closeWalkingProfile() {
+        if (setupOpen === 'first') { try { localStorage.setItem(SETUP_KEY, 'skipped'); } catch { /* storage may be unavailable */ } }
+        setSetupOpen(null);
     }
     function chooseProfile(p: Profile) {
         setChosenMode(null);
@@ -868,6 +884,12 @@ function ResidentPageContent() {
 
                 {view === 'plan' && step === 'where' && (
                     <div className="tg-stack">
+                        {(() => { const summary = profileSummary(profile, needs); return (
+                            <button type="button" className="tg-profile-card" onClick={() => setSetupOpen('edit')} aria-label={`Walking as ${summary.title}: ${summary.details}. Edit walking profile`}>
+                                <UserRound size={20} aria-hidden />
+                                <span><small>Walking as</small><strong>{summary.title}</strong><span>{summary.details}</span></span>
+                                <span className="tg-profile-edit"><Pencil size={14} aria-hidden /> Edit</span>
+                            </button>); })()}
                         {suggestedPlaces.length > 0 && <div className="tg-suggestions" aria-label="Suggested destinations">
                             {suggestedPlaces.map(place => <button key={place.id} type="button" onClick={() => selectSearchResult(place)}><MapPin size={15} aria-hidden />{place.name}</button>)}
                         </div>}
@@ -1099,6 +1121,9 @@ function ResidentPageContent() {
                     </div>
                 </Sheet>
             )}
+
+            {setupOpen && <WalkingProfileSetup initial={answersFrom(profile, needs)} firstRun={setupOpen === 'first'}
+                onSave={saveWalkingProfile} onClose={closeWalkingProfile} />}
 
             {showReportModal && (
                 <Sheet title="Report a hazard" onClose={() => setShowReportModal(false)}>
