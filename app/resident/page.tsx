@@ -53,7 +53,7 @@ import { metres } from '@/lib/walking-geometry';
 
 
 import ResidentMap, { type MapMode } from '@/components/map/ResidentMap';
-import PanelGrip from '@/components/walking/PanelGrip';
+import PanelGrip, { type PanelState } from '@/components/walking/PanelGrip';
 import { presetStartPoints, type StartPoint } from '@/lib/start-points';
 import WeatherStrip from '@/components/walking/WeatherStrip';
 import HazardPhotoInput from '@/components/resident/HazardPhotoInput';
@@ -259,7 +259,10 @@ function ResidentPageContent() {
     const [view, setView] = useState<'explore' | 'plan' | 'walk' | 'saved'>(walkSession && !initialWalk.fromLink ? 'walk' : 'plan');
     const [returning, setReturning] = useState(searchParams.get('return') === '1');
     const [savingPack, setSavingPack] = useState(false);
-    const [panelMinimized, setPanelMinimized] = useState(view === 'walk');
+    const [panelState, setPanelState] = useState<PanelState>(view === 'walk' ? 'min' : 'partial');
+    const panelMinimized = panelState === 'min';
+    // Showing new content opens the panel to part height; minimising keeps the old behaviour.
+    const setPanelMinimized = (minimized: boolean) => setPanelState(current => minimized ? 'min' : current === 'full' ? 'full' : 'partial');
     const [livePoint, setLivePoint] = useState<[number, number] | null>(null);
     const [mapFocus, setMapFocus] = useState<[number, number] | undefined>();
 
@@ -765,7 +768,7 @@ function ResidentPageContent() {
     /* ---------------------------------------------------------------- */
 
     return (
-        <div data-view={view} data-panel-minimized={panelMinimized || pickingHazard} className={`tg font-sans relative w-full h-[100dvh] flex flex-col overflow-hidden shadow-2xl ${prefs.highContrast ? 'hc' : ''} ${prefs.reduceMotion ? 'rm' : ''}`}>
+        <div data-view={view} data-panel-minimized={panelMinimized || pickingHazard} data-panel={pickingHazard ? 'min' : panelState} className={`tg font-sans relative w-full h-[100dvh] flex flex-col overflow-hidden shadow-2xl ${prefs.highContrast ? 'hc' : ''} ${prefs.reduceMotion ? 'rm' : ''}`}>
 
             <div className="tg-topbar">
             <a href="#walk-planning" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[3000] focus:rounded-xl focus:bg-white focus:p-3 focus:font-bold text-slate-900">Skip to walk planning</a>
@@ -853,7 +856,7 @@ function ResidentPageContent() {
             </div>
 
             <section id="walk-planning" aria-label="Walk planning" tabIndex={-1} className="tg-sheet">
-                {view !== 'saved' && !pickingHazard && <PanelGrip minimized={panelMinimized} walk={view === 'walk'} onChange={setPanelMinimized} />}
+                {view !== 'saved' && !pickingHazard && <PanelGrip state={panelState} walk={view === 'walk'} onChange={setPanelState} />}
                 <div id="walking-panel" className="tg-panel-body">
                 {libraryMessage && <div role="status" className="tg-note mb-3"><p>{libraryMessage}</p><button className="min-h-11 text-sm font-bold underline" onClick={() => setLibraryMessage(null)}>Dismiss message</button></div>}
                 {view === 'explore' && <ExploreWalks nodes={nodes} edges={edges} data={walkingData} request={toolRequest} hazards={hazards} onChoose={chooseFacility} onReturn={planReturn}
