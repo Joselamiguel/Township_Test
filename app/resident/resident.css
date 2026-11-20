@@ -479,3 +479,20 @@
     .tg-start-field { margin: 0 0 .65rem 1rem; }
     .tg-panel-grip { display: none; }
 }
+
+/* Hazard photo: add, preview and the photo reader's status */
+.tg-photo { display: grid; gap: .4rem; }
+.tg-photo-row { display: flex; gap: .65rem; align-items: center; }
+.tg-photo-add, .tg-photo-thumb { flex: none; width: 5.5rem; height: 5.5rem; border-radius: .8rem; position: relative; overflow: hidden; }
+.tg-photo-add { display: grid; place-content: center; justify-items: center; gap: .2rem; border: 2px dashed var(--line);
+    background: var(--brand-soft); color: var(--brand); font-size: .8rem; font-weight: 700; cursor: pointer; }
+.tg-photo-add:has(+ input:focus-visible) { outline: 3px solid #1a56db; outline-offset: 2px; }
+.tg-photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.tg-photo-thumb button { position: absolute; top: .25rem; right: .25rem; width: 1.75rem; height: 1.75rem; border-radius: 999px;
+    border: 0; background: rgba(0,0,0,.6); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.tg-photo-status p { display: block; }
+.tg-photo-status svg { display: inline; vertical-align: -2px; margin-right: .25rem; color: var(--brand); }
+.tg-spin { animation: tg-spin 1s linear infinite; }
+@keyframes tg-spin { to { transform: rotate(360deg); } }
+.tg-report-photo { float: right; width: 3.25rem; height: 3.25rem; object-fit: cover; border-radius: .5rem; margin-left: .5rem; }
+.tg.hc .tg-photo-add { border-color: #000; }
