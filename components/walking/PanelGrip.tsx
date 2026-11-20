@@ -3,12 +3,13 @@
 import { useRef } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
-export default function PanelGrip({ expanded, onChange }: { expanded: boolean; onChange: (expanded: boolean) => void }) {
+export default function PanelGrip({ minimized, walk, onChange }: { minimized: boolean; walk: boolean; onChange: (minimized: boolean) => void }) {
     const startY = useRef<number | null>(null);
     const handledDrag = useRef(false);
-    const Icon = expanded ? ChevronDown : ChevronUp;
+    const Icon = minimized ? ChevronUp : ChevronDown;
+    const label = minimized ? (walk ? 'Show walk controls' : 'Show panel') : 'Minimize panel';
     return (
-        <button type="button" className="tg-panel-grip" aria-controls="walking-panel" aria-expanded={expanded}
+        <button type="button" className="tg-panel-grip" aria-controls="walking-panel" aria-expanded={!minimized}
             onPointerDown={event => {
                 if (!event.isPrimary || event.button !== 0) return;
                 startY.current = event.clientY;
@@ -21,7 +22,7 @@ export default function PanelGrip({ expanded, onChange }: { expanded: boolean; o
                 startY.current = null;
                 if (Math.abs(displacement) < 30) return;
                 handledDrag.current = true;
-                onChange(displacement < 0);
+                onChange(displacement > 0);
             }}
             onPointerCancel={() => { startY.current = null; handledDrag.current = false; }}
             onClick={event => {
@@ -29,11 +30,11 @@ export default function PanelGrip({ expanded, onChange }: { expanded: boolean; o
                     handledDrag.current = false;
                     return;
                 }
-                onChange(!expanded);
+                onChange(!minimized);
             }}
         >
             <span className="tg-panel-grip-bar" aria-hidden />
-            <span><Icon size={15} aria-hidden />{expanded ? 'Show map' : 'Expand panel'}</span>
+            <span><Icon size={15} aria-hidden />{label}</span>
         </button>
     );
 }
