@@ -22,7 +22,8 @@ export function preparePilotGraph(graph: {nodes:PathNode[];edges:PathEdge[]}, ra
         const id=area==='elmina'?edge.id:Number(sourceId(area,`way:${way}:${edge.from_node}:${edge.to_node}`,PILOTS[area].edge_offset));
         if(seen.has(id))throw new Error('Duplicate path identity; review the OSM segmentation before importing.');seen.add(id);
         const direction=t['oneway:foot']==='-1'||t.conveying==='backward'?'backward':t['oneway:foot']==='yes'||t.conveying==='forward'?'forward':'both';
-        return {...edge,id,covered:t.covered==='yes'?true:t.covered==='no'?false:null,foot_direction:direction as 'both'|'forward'|'backward',
+        const covered = t.covered === 'no' ? false : t.covered === 'yes' || (area === 'um-campus' && t.tunnel === 'building_passage') ? true : null;
+        return {...edge,id,covered,foot_direction:direction as 'both'|'forward'|'backward',
             source_ref:`https://www.openstreetmap.org/way/${way}`,level:t.level??'',layer:t.layer??'',bridge:t.bridge??'',tunnel:t.tunnel??''};
     });
     return {nodes:graph.nodes,edges};
@@ -42,7 +43,7 @@ function contains(line: Array<{lat:number;lon:number}>, p:[number,number]) {
     }
     return inside;
 }
-function classification(t:Record<string,string>): {kind:WalkingAsset['kind'];category:PlaceCategory;fallback:string}|null {
+function classification(t:Record<string,string>,area:PilotId): {kind:WalkingAsset['kind'];category:PlaceCategory;fallback:string}|null {
     if(t.entrance&&t.entrance!=='no')return null; // Associated with their actual place below.
     if(t.amenity==='bench')return {kind:'rest',category:'other',fallback:'Mapped seat'};
     if(t.amenity==='toilets')return {kind:'toilet',category:'other',fallback:'Mapped toilet'};
@@ -53,6 +54,7 @@ function classification(t:Record<string,string>): {kind:WalkingAsset['kind'];cat
     if(['cafe','restaurant','fast_food','food_court','marketplace'].includes(t.amenity))return {kind:'destination',category:t.amenity==='marketplace'?'shopping':'food',fallback:'Mapped food place'};
     if(t.shop)return {kind:'destination',category:'shopping',fallback:'Mapped shop'};
     if(t.leisure==='park'||t.leisure==='garden')return {kind:'destination',category:'park',fallback:'Mapped park'};
+    if(area==='um-campus' && (t.building||t.amenity==='college'||t.amenity==='university'||t.leisure==='sports_centre'))return {kind:'destination',category:'community',fallback:'Mapped campus place'};
     if(t.amenity==='community_centre'||t.amenity==='library'||t.amenity==='place_of_worship'||t.tourism||t.historic||t.place==='square')return {kind:'destination',category:'community',fallback:'Mapped place'};
     return null;
 }
@@ -77,7 +79,7 @@ export function mappedAssets(raw:OsmSource, edges:PathEdge[], area:PilotId) {
             connection_distance_m:joined?.distance??null,anchor_lat:joined?.point[1]??null,anchor_lng:joined?.point[0]??null};
     };
     for(const element of raw.elements){
-        const t=element.tags??{},classificationResult=classification(t),p=representative(element);
+        const t=element.tags??{},classificationResult=classification(t,area),p=representative(element);
         if(!classificationResult||!p||!pointInPilot(p,area)||['no','private'].includes(t.access))continue;
         if(!t.name&&!t['name:en']&&classificationResult.kind==='destination'&&!t.shop)continue;
         const {kind,category,fallback}=classificationResult,key=`osm:${element.type}:${element.id}`;

@@ -123,13 +123,32 @@ CREATE INDEX IF NOT EXISTS idx_walking_assets_parent ON walking_assets(parent_id
 CREATE INDEX IF NOT EXISTS idx_verification_target ON verification_records(target_type, target_id, observed_at DESC, id DESC);
 
 -- Existing records belong to the original Elmina example. Area scoping is additive.
-ALTER TABLE path_nodes ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
-ALTER TABLE path_edges ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+ALTER TABLE path_nodes ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina';
+ALTER TABLE path_edges ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina';
 ALTER TABLE path_edges ADD COLUMN IF NOT EXISTS foot_direction TEXT NOT NULL DEFAULT 'both' CHECK (foot_direction IN ('both','forward','backward'));
-ALTER TABLE walking_assets ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
-ALTER TABLE verification_records ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
-ALTER TABLE hazard_reports ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
-ALTER TABLE defect_reports ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina' CHECK (area_id IN ('elmina','pasar-seni'));
+ALTER TABLE walking_assets ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina';
+ALTER TABLE verification_records ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina';
+ALTER TABLE hazard_reports ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina';
+ALTER TABLE defect_reports ADD COLUMN IF NOT EXISTS area_id TEXT NOT NULL DEFAULT 'elmina';
+-- Replace the previous two-area checks on an existing installation.
+DO $$
+DECLARE
+    table_name text;
+    constraint_name text;
+BEGIN
+    FOREACH table_name IN ARRAY ARRAY['path_nodes','path_edges','walking_assets','verification_records','hazard_reports','defect_reports']
+    LOOP
+        constraint_name := table_name || '_area_id_check';
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = table_name::regclass AND conname = constraint_name
+              AND strpos(pg_get_constraintdef(oid), 'um-campus') > 0
+        ) THEN
+            EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I, ADD CONSTRAINT %I CHECK (area_id IN (''elmina'',''pasar-seni'',''um-campus''))',
+                table_name, constraint_name, constraint_name);
+        END IF;
+    END LOOP;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_path_edges_area ON path_edges(area_id,id);
 CREATE INDEX IF NOT EXISTS idx_path_nodes_area ON path_nodes(area_id,id);
 CREATE INDEX IF NOT EXISTS idx_walking_assets_area ON walking_assets(area_id,id);

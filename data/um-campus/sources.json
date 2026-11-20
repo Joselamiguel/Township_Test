@@ -1,0 +1,36 @@
+{
+  "area": "um-campus",
+  "bounds": [
+    3.109,
+    101.634,
+    3.136,
+    101.671
+  ],
+  "endpoint": "https://overpass-api.de/api/interpreter",
+  "query": "[out:json][timeout:90];(\n  way[highway~\"^(footway|path|pedestrian|steps|crossing|cycleway|service|track)$\"](3.109,101.634,3.136,101.671);\n  nwr[amenity~\"^(bench|toilets|drinking_water|shelter|clinic|hospital|pharmacy|doctors|dentist|community_centre|library|marketplace|restaurant|cafe|fast_food|food_court|place_of_worship|university|college)$\"](3.109,101.634,3.136,101.671);\n  nwr[leisure~\"^(park|garden|sports_centre)$\"](3.109,101.634,3.136,101.671);\n  nwr[shop](3.109,101.634,3.136,101.671); nwr[tourism](3.109,101.634,3.136,101.671); nwr[place=square](3.109,101.634,3.136,101.671);\n  node[entrance](3.109,101.634,3.136,101.671); nwr[railway~\"^(station|halt|subway_entrance)$\"](3.109,101.634,3.136,101.671);\n  nwr[public_transport=station](3.109,101.634,3.136,101.671); relation[public_transport=stop_area](3.109,101.634,3.136,101.671);\n  way[building](3.109,101.634,3.136,101.671);\n);out body geom;",
+  "sources": [
+    {
+      "id": "osm",
+      "name": "OpenStreetMap / Overpass",
+      "url": "https://www.openstreetmap.org/copyright",
+      "license": "ODbL",
+      "status": "loaded",
+      "fetched_at": "2026-11-20T12:00:16.077Z",
+      "data_at": "2026-11-20T11:59:06Z",
+      "sha256": "4449d9ca15665306d549e1e2d921094525efd4ff42f214b918fc6d8239a4bf0f",
+      "records": 2513,
+      "note": "Mapped walkways, crossings, buildings and amenities. Roof cover uses explicit OSM cover or building-passage tags. Access and shelter need field checks."
+    },
+    {
+      "id": "um-map",
+      "name": "Universiti Malaya campus map",
+      "url": "https://www.um.edu.my/campus-map",
+      "license": "UM website",
+      "status": "partial",
+      "fetched_at": null,
+      "data_at": null,
+      "records": 0,
+      "note": "Official campus reference for orientation and landmark names. Routing geometry is from OpenStreetMap."
+    }
+  ]
+}

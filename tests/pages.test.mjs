@@ -16,7 +16,7 @@ test('Pages uses the real Elmina example while a missing KL bundle stays pending
     t.after(()=>rmSync(dir,{recursive:true,force:true}));
     const pilot=await loadPagesPilot(join(dir,'missing.json'));
     assert.equal(pilot,null);
-    assert.deepEqual(pagesPilotMetadata(pilot),{areas:['elmina'],default_area:'elmina',pilot_status:{'pasar-seni':'awaiting-source-data',elmina:'available'}});
+    assert.deepEqual(pagesPilotMetadata(pilot),{areas:['elmina'],default_area:'elmina',pilot_status:{'pasar-seni':'awaiting-source-data','um-campus':'awaiting-source-data',elmina:'available'}});
 });
 
 test('a valid KL source enables the pilot; corrupt or private sources never fall back silently',async t=>{
@@ -25,7 +25,7 @@ test('a valid KL source enables the pilot; corrupt or private sources never fall
     writeFileSync(file,JSON.stringify(bundle));
     const loaded=await loadPagesPilot(file);
     assert.equal(loaded.context.dataset_id,bundle.context.dataset_id);
-    assert.deepEqual(pagesPilotMetadata(loaded),{areas:['pasar-seni','elmina'],default_area:'pasar-seni',pilot_status:{'pasar-seni':'available',elmina:'available'}});
+    assert.deepEqual(pagesPilotMetadata(loaded),{areas:['pasar-seni','elmina'],default_area:'pasar-seni',pilot_status:{'pasar-seni':'available','um-campus':'awaiting-source-data',elmina:'available'}});
     writeFileSync(file,'{invalid');await assert.rejects(()=>loadPagesPilot(file),SyntaxError);
     bundle.walking.verifications.push({reviewer:'Private test record'});
     writeFileSync(file,JSON.stringify(bundle));await assert.rejects(()=>loadPagesPilot(file),/field-auditor/);

@@ -2,13 +2,15 @@
 
 For the **Pasar Seni–Chinatown–Masjid Jamek primary pilot**, see [source acquisition and GIS review](pasar-seni-pilot.md) and the [included source assessment](../data/pasar-seni/README.md). The real user-supplied OSM export and 2026 DOSM population context are included, with compressed original downloads and checksums. Its data pipeline is separate from the retained Elmina example described below. `npm run data:rebuild` regenerates the KL bundle without network access to the source hosts.
 
-## Included source
+See the [UM campus source notes](../data/um-campus/README.md) for the separate campus and approaches import.
+
+## Included Elmina source
 
 `precinct.json` is an OpenStreetMap/Overpass JSON snapshot included in the repository. Its `timestamp_osm_base` is `2026-10-18T18:50:06Z`. Normal setup processes this local file; it does not contact an external routing API or download a new dataset.
 
 OpenStreetMap data is available under the [Open Database Licence](https://www.openstreetmap.org/copyright). Preserve **© OpenStreetMap contributors** attribution and the applicable data-licence requirements when distributing derived data. The interactive map already includes contributor attribution.
 
-The public tile layer follows the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/). Free data does not imply unlimited use of the public tile servers. Setup does not prefetch or bulk-download tiles.
+The resident basemap renders committed OpenStreetMap geometry. Elmina uses its original snapshot and the [map context extract](../data/elmina/sources.json) for buildings and landscape. The dashboard still uses public tiles covered by the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
 
 ## Pedestrian import policy
 
@@ -26,7 +28,7 @@ The router also rejects `street` edges and edges explicitly marked as inaccessib
 
 ## Coverage and confidence
 
-The original app used Universiti Malaya sample coordinates, but the included snapshot covers Elmina. `lib/precinct.ts` now uses Elmina OSM path node 8447864418 between two bridge destinations named in OSM, on the same walking component. Tests verify both sample walks fit the default 30-minute budget for all three mobility profiles. The earlier sample node required a long mapped detour and exceeded that budget. Routes cannot be inferred across a missing pedestrian link, and coverage outside this snapshot requires additional mapping.
+`lib/precinct.ts` uses Elmina OSM path node 8447864418 between two bridge destinations named in OSM, on the same walking component. Tests verify both sample walks fit the default 30-minute budget for all three mobility profiles. The earlier sample node required a long mapped detour and exceeded that budget. Routes cannot be inferred across a missing pedestrian link, and coverage outside this snapshot requires additional mapping.
 
 Covered and lighting tags are weak hints marked `modelled`; unspecified shade, lighting, slope and surface attributes are not silently converted into audited observations. Routing fallback assumptions help compare walks but do not verify on-the-ground conditions. Resident reports are stored separately and affect subsequent route planning.
 

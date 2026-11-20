@@ -1,16 +1,19 @@
 import { validatePilotSnapshot } from './pilot-export.mjs';
+import { PILOTS } from '../lib/pilots.ts';
 /** Add a separate, immutable source dataset without replacing the Elmina graph or its audits. */
 export async function seedPilotArea(pool,bundle){
     validatePilotSnapshot(bundle);
     const area=bundle.area_id;
-    if(area!=='pasar-seni'||!bundle.context?.dataset_id||!bundle.graph?.edges?.length||bundle.walking?.verifications?.length)throw Error('Use a validated, unverified Pasar Seni source bundle.');
     if(bundle.graph.edges.some(e=>e.pedestrian_access!==true||e.kind==='street'))throw Error('The pilot graph must contain pedestrian paths only.');
     const client=await pool.connect();
     try{
         await client.query('BEGIN');await client.query("SELECT pg_advisory_xact_lock(hashtext('townshipgo-pilot-import'))");
         const existing=await client.query('SELECT count(*)::int AS count FROM path_edges WHERE area_id=$1',[area]);
         const revision=await client.query('SELECT value FROM app_metadata WHERE key=$1',[`pilot:${area}:revision`]);
-        if(existing.rows[0].count&&revision.rows[0]?.value!==bundle.context.dataset_id)throw Error('Another central KL dataset already exists. Use a separate database/version so reports and audits retain their original targets.');
+        if (existing.rows[0].count && revision.rows[0]?.value !== bundle.context.dataset_id) {
+            const name = area === 'pasar-seni' ? 'central KL' : PILOTS[area].short_name;
+            throw Error(`Another ${name} dataset already exists. Use a separate database/version so reports and audits retain their original targets.`);
+        }
         if(!existing.rows[0].count){
             const collision=await client.query('SELECT id FROM path_nodes WHERE id=ANY($1::bigint[]) AND area_id<>$2 LIMIT 1',[bundle.graph.nodes.map(n=>n.id),area]);
             if(collision.rowCount)throw Error('A source node already belongs to another area. Review dataset boundaries before importing.');
@@ -22,6 +25,6 @@ export async function seedPilotArea(pool,bundle){
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,[a.id,a.external_id,a.parent_id,a.kind,a.category,a.name,a.lat,a.lng,a.source,a.source_ref,JSON.stringify(a.properties),a.edge_id,a.edge_fraction,a.connection_distance_m,area]);
         }
         for(const [key,value]of [[`pilot:${area}:revision`,bundle.context.dataset_id],[`pilot:${area}:context`,JSON.stringify(bundle.context)]])await client.query('INSERT INTO app_metadata(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value',[key,value]);
-        await client.query('COMMIT');console.log(`Central KL source data ready; ${bundle.graph.edges.length} paths. Existing examples, reports and checks were preserved.`);
+        await client.query('COMMIT');console.log(`${PILOTS[area].short_name} source data ready; ${bundle.graph.edges.length} paths.`);
     }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }

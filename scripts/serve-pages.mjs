@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const out = fileURLToPath(new URL('../out/', import.meta.url));
 const { base_path: base } = JSON.parse(await readFile(resolve(out, 'site-config.json'), 'utf8'));
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json',
+const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.geojson': 'application/geo+json',
     '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain' };
 const server = createServer(async (req, res) => {
     try {

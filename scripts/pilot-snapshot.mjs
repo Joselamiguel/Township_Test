@@ -4,8 +4,7 @@ import { mappedAssets,preparePilotGraph,networkCoverage,pilotOrigin } from '../l
 import { transitContext,railDemand,districtPopulation,wikidataLandmarks,satelliteScenes } from '../lib/data/context.ts';
 import { placeSearchText } from '../lib/walking.ts';
 
-export function createPilotSnapshot(rawGraph,osm,inputs={},now=new Date().toISOString()){
-    const area='pasar-seni';
+export function createPilotSnapshot(rawGraph,osm,inputs={},now=new Date().toISOString(),area='pasar-seni'){
     const graph=preparePilotGraph(rawGraph,osm,area);
     graph.nodes.sort((a,b)=>a.id-b.id);graph.edges.sort((a,b)=>a.id-b.id);
     const assets=mappedAssets(osm,graph.edges,area).sort((a,b)=>Number(a.parent_id!==null)-Number(b.parent_id!==null)||Number(a.id)-Number(b.id));
@@ -27,7 +26,7 @@ export function createPilotSnapshot(rawGraph,osm,inputs={},now=new Date().toISOS
     for(const [agency,files]of Object.entries(inputs.gtfs??{})){const part=transitContext(files,agency,area);transit.stops.push(...part.stops);transit.routes.push(...part.routes);transit.service_dates.push(...part.service_dates);}
     const context={area_id:area,dataset_id:id,built_at:now,origin,featured_ids:featured,coverage,sources:inputs.sources??[],transit,
         demand:railDemand(inputs.ridership??[],transit.stops.map(s=>s.name)),demographics:districtPopulation(inputs.population??[],area),landmarks:wikidataLandmarks(inputs.wikidata??{},area),
-        environment:{scenes:satelliteScenes(inputs.satellite??{}),note:'Satellite scenes and land-cover products provide environmental context at their published resolution. They do not verify footpath shade, heat, kerbs or working lights.'}};
+        environment:{scenes:satelliteScenes(inputs.satellite??{},area),note:'Satellite scenes and land-cover products provide environmental context at their published resolution. They do not verify footpath shade, heat, kerbs or working lights.'}};
     return {area_id:area,graph:{...graph,source:{name:'OpenStreetMap',pedestrian_only:true,attribution:'© OpenStreetMap contributors (ODbL)',snapshot_at:osm.osm3s?.timestamp_osm_base??inputs.osm_date??null,area_id:area,dataset_id:id,origin,featured_ids:featured}},
         walking:{assets,verifications:[],as_of:now,area_id:area,dataset_id:id},hazards:{hazards:[]},reports:{reports:[]},context};
 }

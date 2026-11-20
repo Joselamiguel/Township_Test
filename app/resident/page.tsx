@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import type { ReactNode } from 'react';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams,useRouter } from 'next/navigation';
 import {
-    MapPin, Navigation, LocateFixed, Thermometer, Moon, Sun, X, Send, Share2, Check,
-    Circle, CheckCircle2, ArrowLeft, Footprints, Umbrella, Lightbulb, Ban, Accessibility,
+    MapPin, Navigation, LocateFixed, Search, CloudRain, Sun, X, Send, Share2, Check,
+    Footprints, Umbrella, Lightbulb, Ban, Accessibility,
     AlertTriangle, Phone, MessageCircle, Copy, Volume2, Compass, Bookmark, Route as RouteIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -48,12 +47,14 @@ import QuickConditionUpdate from '@/components/walking/QuickConditionUpdate';
 import PilotSelector from '@/components/walking/PilotSelector';
 import PilotSources from '@/components/walking/PilotSources';
 import PilotUnavailable from '@/components/walking/PilotUnavailable';
-import { PILOTS,pilotFromParams,isPilotAvailable,type PilotId,type PilotContext } from '@/lib/pilots';
+import { PILOTS,pilotFromParams,isPilotAvailable,pointInPilot,type PilotId,type PilotContext } from '@/lib/pilots';
 import { usePlannerResult } from '@/lib/use-planner';
 import { metres } from '@/lib/walking-geometry';
 
 
-const InteractiveMap = dynamic(() => import('@/components/map/InteractiveMap'), { ssr: false });
+import ResidentMap from '@/components/map/ResidentMap';
+import WeatherStrip from '@/components/walking/WeatherStrip';
+import './resident.css';
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
@@ -61,23 +62,38 @@ const InteractiveMap = dynamic(() => import('@/components/map/InteractiveMap'), 
 
 const EMERGENCY_NUMBER = '999'; // Malaysia. Remove the "Call for help" button if you don't want it.
 
-const MODES: Mode[] = ['direct', 'coolest', 'safest'];
+const MODES: Mode[] = ['direct', 'coolest', 'sheltered', 'safest'];
 
-// Plain-language names for residents
-const MODE_LABEL: Record<Mode, string> = { direct: 'Shortest', coolest: 'Shadiest', safest: 'Best lit' };
-const MODE_ICON: Record<Mode, LucideIcon> = { direct: Footprints, coolest: Umbrella, safest: Lightbulb };
+const MODE_LABEL: Record<Mode, string> = { direct: 'Shortest', coolest: 'Shadiest', sheltered: 'Rain shelter', safest: 'Best lit' };
+const MODE_ICON: Record<Mode, LucideIcon> = { direct: Footprints, coolest: Umbrella, sheltered: CloudRain, safest: Lightbulb };
 
-// capexCat + severity are still saved exactly as before; residents just see plain wording
-const HAZARD_OPTIONS: {
-    kind: HazardKind; label: string; hint: string; Icon: LucideIcon;
-    capexCat: string; severity: 'blocker' | 'comfort';
-}[] = [
-    { kind: 'blocked', label: 'Path is blocked', hint: 'Something is in the way', Icon: Ban, capexCat: 'Access Barrier', severity: 'blocker' },
-    { kind: 'no_ramp', label: 'No ramp at the kerb', hint: 'Hard for wheelchairs and walkers', Icon: Accessibility, capexCat: 'Universal Design', severity: 'blocker' },
-    { kind: 'light_out', label: 'Streetlight is not working', hint: 'Too dark to walk safely', Icon: Lightbulb, capexCat: 'Safety Electrical', severity: 'comfort' },
-    { kind: 'broken_surface', label: 'Pavement is broken', hint: 'Cracked or uneven ground', Icon: AlertTriangle, capexCat: 'Pavement Renewal', severity: 'comfort' },
-    { kind: 'no_shade', label: 'No shade here', hint: 'Too hot, no cover from the sun', Icon: Sun, capexCat: 'Shade Infrastructure', severity: 'comfort' },
+const HAZARD_OPTIONS: { kind: HazardKind; label: string; Icon: LucideIcon }[] = [
+    { kind: 'no_shade', label: 'Missing shade', Icon: Sun },
+    { kind: 'light_out', label: 'Broken light', Icon: Lightbulb },
+    { kind: 'broken_surface', label: 'Damaged footpath', Icon: AlertTriangle },
+    { kind: 'no_ramp', label: 'Missing kerb ramp', Icon: Accessibility },
+    { kind: 'blocked', label: 'Blocked path', Icon: Ban },
 ];
+
+interface DeviceHazard extends ReportMarker {
+    id: string;
+    lat: number;
+    lng: number;
+    category: string;
+    description: string;
+    location: string;
+    dataset: string | undefined;
+}
+const hazardKey = (area: PilotId) => `townshipgo:hazards:v1:${area}`;
+function readDeviceHazards(area: PilotId): DeviceHazard[] {
+    try {
+        const value = JSON.parse(localStorage.getItem(hazardKey(area)) ?? '[]');
+        return Array.isArray(value) ? value.filter(report => report && typeof report.id === 'string'
+            && typeof report.category === 'string' && typeof report.description === 'string'
+            && typeof report.location === 'string' && Number.isFinite(report.lat) && Number.isFinite(report.lng)
+            && pointInPilot([report.lat, report.lng], area)) : [];
+    } catch { return []; }
+}
 
 type Step = 'where' | 'route' | 'walking';
 type TextScale = 'normal' | 'large' | 'xlarge';
@@ -87,100 +103,7 @@ const DEFAULT_PREFS: Prefs = { scale: 'normal', highContrast: false, reduceMotio
 const PREFS_KEY = 'townshipgo:prefs';
 const SCALE_PCT: Record<TextScale, string> = { normal: '100%', large: '112.5%', xlarge: '125%' };
 
-/* ------------------------------------------------------------------ */
-/* Styles (kept in one place so the look is easy to tweak)             */
-/* ------------------------------------------------------------------ */
 
-const STYLES = `
-.tg{
-  --brand:#A4262C; --brand-ink:#7F1D22; --brand-soft:#F8ECEC;
-  --bg:#F3F4F6; --surface:#fff; --ink:#1B1F23; --muted:#444B55; --line:#B8BFC9;
-  --warn:#F2B400; --warn-ink:#2B2100; --wa:#176B3F; --bw:2px;
-  font-size:1rem; line-height:1.4; color:var(--ink); background:var(--bg);
-}
-.tg.hc{
-  --brand:#7A0F14; --brand-ink:#560A0E; --brand-soft:#fff;
-  --bg:#fff; --ink:#000; --muted:#000; --line:#000; --bw:3px; --wa:#0B4A28;
-}
-.tg *{box-sizing:border-box}
-.tg :focus-visible{outline:4px solid #1A56DB; outline-offset:3px}
-
-.tg-header{background:var(--brand); color:#fff; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
-  gap:.75rem; padding:.35rem .75rem; min-height:3.25rem}
-.tg-iconbtn{min-height:2.75rem; padding:0 .7rem; border-radius:14px; border:2px solid rgba(255,255,255,.85);
-  background:transparent; color:#fff; font-weight:700; font-size:.9rem; display:flex; align-items:center; gap:.4rem; cursor:pointer}
-
-.tg-banner{display:flex; align-items:center; gap:.55rem; padding:.45rem .8rem; background:#fff;
-  border-bottom:var(--bw) solid var(--line); font-size:.9rem; font-weight:600; line-height:1.3}
-
-.tg-map{position:relative; z-index:0; flex:1 1 0; min-height:10rem}
-
-.tg-sheet{flex:0 1 auto; min-height:0; max-height:58dvh; overflow-y:auto; background:var(--surface);
-  border-top:var(--bw) solid var(--line); border-radius:20px 20px 0 0; padding:.8rem .85rem .9rem;
-  box-shadow:0 -6px 18px rgba(0,0,0,.12)}
-
-.tg-h2{font-size:1.25rem; font-weight:800; line-height:1.2; margin:0}
-.tg-label{font-size:.9rem; font-weight:700; color:var(--muted); margin:0}
-.tg-small{font-size:.875rem; color:var(--muted); line-height:1.35}
-.tg-stack{display:flex; flex-direction:column; gap:.6rem}
-.tg-tabs{flex:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.2rem;background:#fff;border-top:2px solid var(--line);padding:.35rem .3rem max(.35rem,env(safe-area-inset-bottom));z-index:2}
-.tg-tabs button{min-height:3.2rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.15rem;border-radius:10px;font:inherit;font-size:.75rem;font-weight:800;color:var(--muted);border:2px solid transparent}
-.tg-tabs button[aria-current="page"]{color:var(--brand-ink);background:var(--brand-soft);border-color:var(--brand)}
-@media (max-width:1023px){
-  .tg[data-view="saved"] .tg-map,.tg[data-expanded="true"] .tg-map{display:none}
-  .tg[data-view="saved"] .tg-sheet,.tg[data-expanded="true"] .tg-sheet{flex:1 1 auto;max-height:none;border-radius:0}
-}
-
-.tg-btn{width:100%; min-height:3rem; padding:.5rem .9rem; border-radius:14px; border:var(--bw) solid var(--line);
-  background:#fff; color:var(--ink); font:inherit; font-weight:700; display:flex; align-items:center; justify-content:center;
-  gap:.5rem; cursor:pointer; text-decoration:none; text-align:center}
-.tg-btn:active{background:#E9ECF0}
-.tg-btn-primary{background:var(--brand); border-color:var(--brand); color:#fff; min-height:3.25rem}
-.tg-btn-primary:active{background:var(--brand-ink)}
-.tg-btn-wa{background:var(--wa); border-color:var(--wa); color:#fff}
-.tg-btn-outline{border-color:var(--brand); color:var(--brand)}
-.tg-btn[disabled]{background:#DDE1E6; border-color:#DDE1E6; color:#3B424B; cursor:not-allowed}
-
-.tg-card{width:100%; min-height:3.5rem; padding:.55rem .75rem; border-radius:16px; border:var(--bw) solid var(--line);
-  background:#fff; color:var(--ink); font:inherit; text-align:left; display:flex; align-items:center; gap:.65rem; cursor:pointer}
-.tg-card[aria-checked="true"]{border-color:var(--brand); background:var(--brand-soft); box-shadow:0 0 0 2px var(--brand)}
-.tg-card-center{justify-content:center; text-align:center; min-height:3rem; font-weight:700}
-
-.tg-badge{display:inline-block; font-size:.8rem; font-weight:800; line-height:1.2; padding:.15rem .6rem;
-  border-radius:999px; border:2px solid var(--brand); color:var(--brand); background:#fff}
-.tg-state{font-size:.875rem; font-weight:800; padding:.2rem .7rem; border-radius:999px; border:2px solid var(--line); background:#fff}
-.tg-card[aria-checked="true"] .tg-state{background:var(--brand); border-color:var(--brand); color:#fff}
-
-.tg-backdrop{position:fixed; inset:0; z-index:2000; background:rgba(0,0,0,.6); display:flex; align-items:flex-end; justify-content:center}
-.tg-modal{width:100%; max-width:28rem; max-height:92dvh; overflow-y:auto; background:#fff; color:var(--ink);
-  border-radius:20px 20px 0 0; padding:.9rem .85rem 1.1rem}
-
-.tg-note{padding:.55rem .75rem; border-radius:12px; border:var(--bw) solid var(--line); background:#fff; font-weight:600; font-size:.9rem}
-.tg-warnbox{background:#FFF6D6; border-color:var(--warn); color:var(--warn-ink)}
-.tg-input{width:100%; min-height:3.75rem; padding:.55rem .7rem; border-radius:12px; border:var(--bw) solid var(--line);
-  font:inherit; font-size:1rem; resize:vertical; background:#fff; color:var(--ink)}
-
-.tg.rm *, .tg.rm *::before, .tg.rm *::after{animation:none !important; transition:none !important}
-@media (prefers-reduced-motion:reduce){ .tg *{animation:none !important; transition:none !important} }
-@media (max-width:1023px) and (max-height:600px){
-  .tg{height:auto;min-height:100dvh;overflow:visible}
-  .tg-map{height:45dvh;min-height:12rem;flex:none}
-  .tg-sheet{max-height:none;overflow:visible;flex:none}
-  .tg-tabs{position:sticky;bottom:0}
-}
-@media (min-width:1024px){
-  .tg{max-width:none;display:grid;grid-template-columns:25rem minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;box-shadow:none}
-  .tg-topbar{grid-column:1 / -1}
-  .tg-tabs{grid-column:1 / -1}
-  .tg-header{padding:.65rem 1.2rem}
-  .tg-map{grid-column:2;grid-row:2;min-height:0}
-  .tg-sheet{grid-column:1;grid-row:2;max-height:none;min-height:0;border-top:0;border-right:2px solid var(--line);border-radius:0;padding:1.15rem;box-shadow:none}
-  .tg-backdrop{align-items:center}
-  .tg-modal{border-radius:20px}
-  .tg[data-view="saved"] .tg-map{display:none}
-  .tg[data-view="saved"] .tg-sheet{grid-column:1 / -1;width:100%;max-width:52rem;justify-self:center;border-right:0}
-}
-`;
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -209,26 +132,14 @@ async function copyText(text: string): Promise<boolean> {
     }
 }
 
-function getFreshPosition(fallback: [number, number]): Promise<[number, number]> {
-    return new Promise((resolve) => {
-        if (!('geolocation' in navigator)) return resolve(fallback);
-        navigator.geolocation.getCurrentPosition(
-            (p) => resolve([p.coords.latitude, p.coords.longitude]),
-            () => resolve(fallback),
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 },
-        );
-    });
-}
-
 const minutesOf = (r: RouteResult & { total_min?: number }) => Math.max(1, Math.ceil(r.total_min ?? r.walk_min));
 
-function reasonFor(m: Mode, r: RouteResult, night: boolean): string {
-    const sun = Math.round(r.sun_exposed_min * 10) / 10;
-    const dark = Math.round(r.dark_m);
-    const base = night
-        ? (dark < 10 ? 'Well lit all the way' : `${dark} m poorly lit`)
-        : (sun < 0.5 ? 'Almost all in shade' : `${sun} min in the sun`);
-    return m === 'direct' ? `Quickest way. ${base}` : base;
+function reasonFor(mode: Mode, route: NonNullable<JourneyPlan['routes']['direct']>, night: boolean) {
+    if (mode === 'sheltered') return `${Math.max(0, Math.round(route.length_m - route.unsheltered_m))} m with recorded roof cover`;
+    if (mode === 'direct') return `${Math.round(route.length_m)} m total`;
+    if (night) return `${Math.round(route.dark_m)} m estimated low light`;
+    if (mode === 'safest') return 'Compares mapped crossings';
+    return `${Math.round(route.sun_exposed_min)} min estimated sun`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -236,18 +147,24 @@ function reasonFor(m: Mode, r: RouteResult, night: boolean): string {
 /* ------------------------------------------------------------------ */
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+    const dialog = useRef<HTMLDialogElement>(null);
+    useEffect(() => {
+        const element = dialog.current;
+        element?.showModal();
+        return () => element?.close();
+    }, []);
     return (
-        <div className="tg-backdrop" onClick={onClose}>
-            <div role="dialog" aria-modal="true" aria-label={title} className="tg-modal" onClick={(e) => e.stopPropagation()}>
+        <dialog ref={dialog} aria-label={title} className="tg-dialog" onCancel={event => { event.preventDefault(); onClose(); }}
+            onClick={event => { if (event.currentTarget === event.target) onClose(); }}>
+            <div className="tg-dialog-panel">
+                <div className="tg-sheet-handle" aria-hidden />
                 <div className="flex items-center justify-between gap-3 mb-3">
                     <h2 className="tg-h2">{title}</h2>
-                    <button className="tg-btn" style={{ width: 'auto' }} onClick={onClose} autoFocus>
-                        <X size={22} aria-hidden /> Close
-                    </button>
+                    <button type="button" className="tg-close" aria-label="Close" onClick={onClose}><X size={20} aria-hidden /></button>
                 </div>
                 {children}
             </div>
-        </div>
+        </dialog>
     );
 }
 
@@ -286,7 +203,8 @@ function ResidentPageContent() {
     const [geoBusy, setGeoBusy] = useState(false);
     const [geoMsg, setGeoMsg] = useState<string | null>(null);
     const [destId, setDestId] = useState<string>(searchParams.get('destId') || initialWalk.destination || '');
-    const [placeQuery,setPlaceQuery]=useState(''),[placeLimit,setPlaceLimit]=useState(12);
+    const [placeQuery, setPlaceQuery] = useState('');
+    const [searchOpen, setSearchOpen] = useState(false);
     const [pilotData,setPilotData]=useState<PilotContext|null>(null);
     const [startingWalk,setStartingWalk]=useState(false);
     const [profile, setProfile] = useState<Profile>(() => {
@@ -336,10 +254,13 @@ function ResidentPageContent() {
     const [panelExpanded, setPanelExpanded] = useState(false);
     const [livePoint, setLivePoint] = useState<[number, number] | null>(null);
     const [mapFocus, setMapFocus] = useState<[number, number] | undefined>();
-    const isNavigating = view === 'walk' && !!walkSession && !sessionFinished;
 
     // Hazard reporting
     const [showReportModal, setShowReportModal] = useState(false);
+    const [pickingHazard, setPickingHazard] = useState(false);
+    const [reportPoint, setReportPoint] = useState<[number, number] | null>(null);
+    const [reportLocated, setReportLocated] = useState(false);
+    const [deviceHazards, setDeviceHazards] = useState(() => readDeviceHazards(area));
     const [informationLayer, setInformationLayer] = useState<EnvironmentLayer | 'routes'>('routes');
     const [selectedKind, setSelectedKind] = useState<HazardKind>('broken_surface');
     const [reportNotes, setReportNotes] = useState('');
@@ -413,7 +334,7 @@ function ResidentPageContent() {
         async function loadGraph() {
             try {
                 const [graphData, hazardData, reportData, walking,context] = await Promise.all([
-                    fetchGraph(area), loadHazards(area), loadReports('all',area), loadWalkingData(area),loadPilotContext(area),
+                    fetchGraph(area), loadHazards(area), loadReports('open',area), loadWalkingData(area),loadPilotContext(area),
                 ]);
                 setPilotData(context);
                 if(!initialOriginUsed.current){setUserCoords(graphData.source.origin?.coordinates??context.origin.coordinates);initialOriginUsed.current=true;}
@@ -434,6 +355,8 @@ function ResidentPageContent() {
 
         void refreshWeather();
         void loadGraph();
+        const timer = window.setInterval(refreshWeather, 15 * 60 * 1000);
+        return () => window.clearInterval(timer);
     }, [reloadVersion,area]);
 
     /* ---------- Routing ---------- */
@@ -449,23 +372,38 @@ function ResidentPageContent() {
     const forecast = forecastAt(weather, planningTime);
     const toolRequest = useMemo(() => ({ origin: userCoords, profile, needs, departure_at: planningTime }), [userCoords, profile, needs, planningTime]);
     const planningSnapshot=useMemo(()=>walkingData&&nodes.length?{nodes,edges,walking:walkingData,hazards}:null,[nodes,edges,walkingData,hazards]);
-    const journeySearch=usePlannerResult<JourneyPlan>(planningSnapshot,returning?{type:'return',input:toolRequest,feels_like:forecast?.feels_like_c}:destination?{
-        type:'journey',input:{...toolRequest,destination,entrance_id:entranceId||undefined},feels_like:forecast?.feels_like_c}:null);
+    const journeySearch = usePlannerResult<JourneyPlan>(planningSnapshot, step !== 'route' ? null : returning
+        ? { type: 'return', input: toolRequest, feels_like: forecast?.feels_like_c }
+        : destination ? { type: 'journey', input: { ...toolRequest, destination, entrance_id: entranceId || undefined }, feels_like: forecast?.feels_like_c } : null);
     const plan=journeySearch.result;
-    const matchingPlaces=useMemo(()=>places.filter(a=>!placeQuery||placeSearchText(a).includes(placeQuery.toLowerCase()))
-        .sort((a,b)=>{const rank=(id:string)=>{const index=pilotData?.featured_ids.indexOf(id)??-1;return index<0?100:index;};return rank(a.id)-rank(b.id)||a.name.localeCompare(b.name);}),[places,placeQuery,pilotData]);
-    const shownPlaces=matchingPlaces.slice(0,placeLimit);
+    const searchTerm = placeQuery.trim().split(',')[0].trim().toLowerCase();
+    const matchingPlaces=useMemo(()=>places.filter(a=>!searchTerm||placeSearchText(a).includes(searchTerm))
+        .sort((a,b)=>{const rank=(id:string)=>{const index=pilotData?.featured_ids.indexOf(id)??-1;return index<0?100:index;};return rank(a.id)-rank(b.id)||a.name.localeCompare(b.name);}),[places,searchTerm,pilotData]);
+    const searchResults = matchingPlaces.slice(0, 8);
+    const suggestedPlaces = (pilotData?.featured_ids ?? []).flatMap(id => places.find(place => place.id === id) ?? []).slice(0, 3);
     const mapAssets=useMemo(()=>walkingData?.assets.filter(a=>['rest','toilet','water','shelter','transit'].includes(a.kind)||(a.kind==='entrance'&&a.parent_id===destination?.id))
         .sort((a,b)=>metres([a.lng,a.lat],[userCoords[1],userCoords[0]])-metres([b.lng,b.lat],[userCoords[1],userCoords[0]])).slice(0,80)??[],[walkingData,destination,userCoords]);
     const recommended: Mode = plan?.recommended ?? (isNight ? 'safest' : 'coolest');
 
-    const visibleModes: Mode[] = isNight ? ['direct', 'safest'] : ['direct', 'coolest', 'safest'];
+    const visibleModes = MODES.filter(mode => plan?.routes[mode] && !(isNight && mode === 'coolest'));
 
     const activeMode = chosenMode && !(isNight && chosenMode === 'coolest') ? chosenMode : recommended;
 
     const activeRoute = view === 'walk' && walkSession ? walkSession.pack.route :
         plan?.routes[activeMode] ?? plan?.routes.direct ?? Object.values(plan?.routes ?? {})[0];
-    const shownMode: Mode = (activeRoute?.mode as Mode | undefined) ?? activeMode;
+    const shownMode: Mode = activeRoute?.mode ?? activeMode;
+    const shortest = plan?.routes.direct;
+    const sameAsShortest = activeRoute && shortest && shownMode !== 'direct'
+        && activeRoute.coordinates.length === shortest.coordinates.length
+        && activeRoute.coordinates.every(([lat, lng], index) => lat === shortest.coordinates[index][0] && lng === shortest.coordinates[index][1]);
+    const reportEdge = useMemo(() => {
+        if (!reportPoint || !pointInPilot(reportPoint, area)) return null;
+        const near = nearestEdge(graph, ...reportPoint);
+        return near && near.distance_m <= 150 ? edges.find(edge => edge.id === near.edge_id) ?? null : null;
+    }, [reportPoint, graph, edges, area]);
+    const localReports = useMemo(() => deviceHazards.filter(report => report.dataset === sourceWalkingData?.dataset_id),
+        [deviceHazards, sourceWalkingData?.dataset_id]);
+    const mapReports = useMemo(() => [...reports, ...localReports], [reports, localReports]);
 
     const mapRoutes = useMemo(
         () =>
@@ -516,10 +454,15 @@ function ResidentPageContent() {
         setGeoBusy(true);
         navigator.geolocation.getCurrentPosition(
             (pos) => {
-                initialOriginUsed.current=true;
-                setUserCoords([pos.coords.latitude, pos.coords.longitude]);
-                setUsingGPS(true);
+                const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
                 setGeoBusy(false);
+                if (!pointInPilot(coords, area)) {
+                    setGeoMsg('Your location is outside this walking area. Use the area start or choose another area.');
+                    return;
+                }
+                initialOriginUsed.current = true;
+                setUserCoords(coords);
+                setUsingGPS(true);
             },
             () => {
                 setGeoBusy(false);
@@ -566,7 +509,7 @@ function ResidentPageContent() {
         if (!libraryRef.current.history.some(w => w.id === id)) return false;
         return changeLibrary({ ...libraryRef.current, history: libraryRef.current.history.map(w => w.id === id ? { ...w, feedback } : w) });
     }
-    function planReturn(minutes: number) { setReturning(true); setNeeds(n => ({ ...n, budget_min: minutes })); setEntranceId(''); setChosenMode(null); setStep('route'); setView('plan'); }
+    function planReturn(minutes: number) { setReturning(true); setNeeds(n => ({ ...n, budget_min: minutes })); setEntranceId(''); setChosenMode(null); setStep('route'); setView('plan'); setPanelExpanded(false); }
     function focusWalkPoint(point: [number, number]) { setMapFocus(point); setPanelExpanded(false); requestAnimationFrame(()=>document.querySelector('.tg-map')?.scrollIntoView({block:'center',behavior:prefs.reduceMotion?'auto':'smooth'})); }
     function chooseFacility(asset: WalkingAsset) { chooseDest(asset.external_id || asset.id); setStep('route'); setView('plan'); }
     function replanPack(pack: WalkPack) {
@@ -657,62 +600,74 @@ function ResidentPageContent() {
     }
 
     /* ---------- Reporting a problem ---------- */
+    function openReport() {
+        setReportPoint(livePoint ?? (usingGPS ? userCoords : null));
+        setReportMsg(null);
+        setSearchOpen(false);
+        setShowReportModal(true);
+        buzz();
+    }
+
+    function chooseReportPoint(lat: number, lng: number) {
+        setReportPoint([lat, lng]);
+        setReportMsg(null);
+        setPickingHazard(false);
+        setShowReportModal(true);
+    }
+
+    function locateReport() {
+        if (!navigator.geolocation) {
+            setReportMsg('Location is unavailable. Choose the location on the map.');
+            return;
+        }
+        setReportLocated(true);
+        navigator.geolocation.getCurrentPosition(position => {
+            setReportPoint([position.coords.latitude, position.coords.longitude]);
+            setReportMsg(null);
+            setReportLocated(false);
+        }, () => {
+            setReportMsg('Location is unavailable. Choose the location on the map.');
+            setReportLocated(false);
+        }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
+    }
+
+    function updateDeviceHazards(next: DeviceHazard[]) {
+        localStorage.setItem(hazardKey(area), JSON.stringify(next));
+        setDeviceHazards(next);
+    }
+
     async function submitCapexDefect() {
+        if (!reportEdge || !reportPoint || isSubmittingReport) return;
         setReportMsg(null);
         setIsSubmittingReport(true);
-
+        const [lat, lng] = reportPoint;
         try {
-            // While walking with GPS, report where the person is now, not where they started
-            const here: [number, number] = usingGPS ? await getFreshPosition(userCoords) : userCoords;
-            const near = nearestEdge(graph, here[0], here[1]);
-
-            if (!near || near.distance_m > 150) {
-                setReportMsg('You seem to be away from the mapped footpaths. Move closer to the path and try again.');
-                return;
+            if (IS_PAGES_PREVIEW) {
+                const category = HAZARD_OPTIONS.find(option => option.kind === selectedKind)!.label;
+                updateDeviceHazards([{ id: crypto.randomUUID(), lat, lng, category, description: reportNotes.trim(),
+                    location: reportEdge.name ?? 'Mapped footpath', dataset: sourceWalkingData?.dataset_id },
+                ...deviceHazards]);
+                setReportMsg('Saved on this device.');
+                speak('Your report was saved on this device.');
+            } else {
+                const { hazard, report } = await submitReport({
+                    area_id: area, edge_id: reportEdge.id, lat, lng, kind: selectedKind, description: reportNotes,
+                });
+                setHazards(previous => [...previous, hazard]);
+                setReports(previous => [report, ...previous]);
+                setReportMsg('Report sent to the maintenance queue.');
+                speak('Your report was sent.');
             }
-
-            const matchedEdge = edges.find((e) => e.id === near.edge_id);
-            const edgeName = matchedEdge?.name || `Walkway Edge #${near.edge_id}`;
-
-            const { hazard, report } = await submitReport({
-                area_id:area,
-                edge_id: near.edge_id,
-                lat: here[0], lng: here[1], kind: selectedKind, description: reportNotes,
-            });
-            setHazards((prev) => [...prev, hazard]);
-            setReports((prev) => [...prev, report]);
-
-            setReportMsg(`Thank you. Your report was sent for ${edgeName}.`);
+            setReportNotes('');
+            setReportPoint(null);
             buzz(120);
-            speak('Thank you. Your report was sent.');
-            setTimeout(() => {
-                setShowReportModal(false);
-                setReportNotes('');
-                setReportMsg(null);
-            }, 2200);
-
-        } catch (err) {
-            console.error('Submission failed:', err);
-            setReportMsg('We could not send your report. Check your internet connection and try again.');
+        } catch (error) {
+            setReportMsg(IS_PAGES_PREVIEW ? 'Could not save this report on your device.'
+                : error instanceof Error ? error.message : 'Could not send the report. Try again when connected.');
         } finally {
             setIsSubmittingReport(false);
         }
     }
-
-    /* ---------- Close dialogs with Escape ---------- */
-    const anyDialog = showSettings || showShare || showReportModal;
-    useEffect(() => {
-        if (!anyDialog) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                setShowSettings(false);
-                setShowShare(false);
-                setShowReportModal(false);
-            }
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [anyDialog]);
 
     /* ---------- Keep the screen on while walking ---------- */
     useEffect(() => {
@@ -740,13 +695,21 @@ function ResidentPageContent() {
     }, [step]);
 
     /* ---------- Derived display values ---------- */
-    const temp = forecast?.feels_like_c;
-    const defaultOrigin=pilotData?.origin.coordinates??configuration.centre;
+    const defaultOrigin = pilotData?.origin.coordinates ?? configuration.centre;
     const isDefaultOrigin = userCoords[0] === defaultOrigin[0] && userCoords[1] === defaultOrigin[1];
-    const originLabel = usingGPS ? 'Your chosen GPS position' : isDefaultOrigin ? configuration.origin_label : 'Your chosen starting point';
-    const banner = isNight ? { Icon: Moon, text: 'Night-time plan. Compare lighting and check access-point hours.' }
-        : temp == null ? { Icon: Sun, text: 'Weather unavailable for this time. Shade and shelter include path-based estimates.' }
-            : { Icon: Thermometer, text: `Departure forecast feels like ${Math.round(temp)}°C${forecast?.rain_probability == null ? '' : ` · rain probability ${Math.round(forecast.rain_probability)}%`}.` };
+    const originLabel = usingGPS ? 'Your location' : isDefaultOrigin ? configuration.origin_label : 'Your chosen starting point';
+
+    function selectSearchResult(place: WalkingAsset) {
+        chooseDest(place.external_id || place.id);
+        setReturning(false);
+        setPlaceQuery('');
+        setSearchOpen(false);
+        setMapFocus(undefined);
+        setPanelExpanded(false);
+        setStep('route');
+        setView('plan');
+    }
+
     const planningControls = <div className="space-y-3">
         <WalkingRequirements needs={needs} profile={profile} onChange={value => { setNeeds(normaliseNeeds(value)); setChosenMode(null); }} />
         <DepartureControl departure={planningTime} onChange={value => { setDeparture(value); setChosenMode(null); }} onNow={() => { setDeparture(null);setPlanningNow(new Date().toISOString()); setReloadVersion(v => v + 1); }} forecast={forecast} />
@@ -758,34 +721,48 @@ function ResidentPageContent() {
 
     return (
         <div data-view={view} data-expanded={panelExpanded} className={`tg font-sans relative w-full max-w-md mx-auto h-[100dvh] flex flex-col overflow-hidden shadow-2xl ${prefs.highContrast ? 'hc' : ''} ${prefs.reduceMotion ? 'rm' : ''}`}>
-            <style dangerouslySetInnerHTML={{ __html: STYLES }} />
 
-            {/* Top bar */}
             <div className="tg-topbar">
-            <a href="#walk-planning" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[3000] focus:rounded-xl focus:bg-white focus:p-3 focus:font-bold focus:text-slate-900">Skip to walk planning</a>
+            <a href="#walk-planning" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[3000] focus:rounded-xl focus:bg-white focus:p-3 focus:font-bold text-slate-900">Skip to walk planning</a>
             <header className="tg-header">
-                <Link href="/" className="flex min-h-11 items-center gap-2 text-white no-underline" aria-label="TownshipGo home">
-                    <Footprints size={24} aria-hidden />
-                    <span style={{ fontWeight: 800, fontSize: '1.15rem' }}>TownshipGo</span>
-                    <span className="ml-2 hidden text-sm font-medium opacity-90 sm:inline">A walk that fits your day</span>
+                <Link href="/" className="tg-brand" aria-label="TownshipGo home">
+                    <span><Footprints size={19} aria-hidden /></span> TownshipGo
                 </Link>
-                <button className="tg-iconbtn" onClick={() => setShowSettings(true)} aria-label="Text size and display settings">
-                    <span style={{ fontSize: '1.15rem', fontWeight: 800 }} aria-hidden>Aa</span>
-                    <span>Display</span>
-                </button>
+                <PilotSelector area={area} onChange={changeArea} />
+                <button className="tg-iconbtn" onClick={() => setShowSettings(true)} aria-label="Text size and display settings">Aa</button>
             </header>
-
-            {IS_PAGES_PREVIEW && view !== 'saved' && <div className="tg-banner" style={{ fontSize: '.75rem' }}>
-                <span>{configuration.short_name} · OSM {networkSnapshot?new Date(networkSnapshot).toLocaleDateString('en-MY'):'source date pending'} · shared reports unavailable</span>
-            </div>}
-
-            {/* Friendly weather line */}
-            {!isNavigating && view === 'plan' && (
-                <div className="tg-banner" role="status">
-                    <banner.Icon size={24} aria-hidden style={{ flexShrink: 0 }} />
-                    <span>{banner.text}</span>
-                </div>
+            {view !== 'saved' && view !== 'walk' && (
+                <form className="tg-search" onSubmit={event => {
+                    event.preventDefault();
+                    if (searchResults[0]) selectSearchResult(searchResults[0]);
+                }} onKeyDown={event => {
+                    if (event.key === 'Escape') setSearchOpen(false);
+                }} onBlur={event => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) setSearchOpen(false);
+                }}>
+                    <label className="tg-search-input">
+                        <Search size={20} aria-hidden />
+                        <span className="sr-only">Find a place</span>
+                        <input type="search" autoComplete="off" value={placeQuery} onFocus={() => setSearchOpen(true)}
+                            onChange={event => { setPlaceQuery(event.target.value); setSearchOpen(true); }}
+                            placeholder={view === 'plan' && step === 'route' && !returning ? currentDest.name : 'Where are you going?'}
+                            aria-controls={searchOpen ? 'mapped-places' : undefined} />
+                    </label>
+                    <button type="button" className="tg-location" aria-label="Use my location" title="Use my location" onClick={handleGetLocation} disabled={geoBusy}><LocateFixed size={20} aria-hidden /></button>
+                    {searchOpen && <div id="mapped-places" className="tg-search-results">
+                        {searchResults.length ? (
+                            <ul aria-label={placeQuery.trim() ? 'Matching places' : 'Suggested places'}>
+                                {searchResults.map(place => <li key={place.id}>
+                                    <button type="button" onClick={() => selectSearchResult(place)}>
+                                        <MapPin size={17} aria-hidden /><span>{place.name}</span>
+                                    </button>
+                                </li>)}
+                            </ul>
+                        ) : <p role="status">{loadingDb ? 'Loading mapped places…' : 'No mapped places match this search.'}</p>}
+                    </div>}
+                </form>
             )}
+            {geoMsg && <p className="tg-banner" role="status">{geoMsg}</p>}
 
             {dataError && (
                 <div role="alert" className="tg-banner">
@@ -798,32 +775,35 @@ function ResidentPageContent() {
             )}
             </div>
 
-            {/* Map */}
             <div className="tg-map">
-                <div style={{ position: 'absolute', inset: 0 }}>
-                    <InteractiveMap
-                        routes={mapRoutes}
-                        activeRouteId={activeRoute?.mode ?? ''}
-                        reports={reports}
-                        assets={mapAssets}
-                        startCoords={view === 'walk' && walkSession ? walkSession.pack.origin : userCoords}
-                        endCoords={activeRoute ? [activeRoute.entrance.lat, activeRoute.entrance.lng] : destination?currentDest.coords:undefined}
-                        startLabel={usingGPS ? 'You' : 'Start'}
-                        reduceMotion={prefs.reduceMotion}
-                        highContrast={prefs.highContrast}
-                        environment={walkingData ? { edges, records: walkingData.verifications, at: planningTime } : undefined}
-                        informationLayer={informationLayer}
-                        onInformationLayerChange={setInformationLayer}
-                        focusLocation={mapFocus}
-                        liveLocation={livePoint ?? undefined}
-                    />
-                </div>
+                <ResidentMap
+                    area={area}
+                    routes={mapRoutes}
+                    activeRouteId={activeRoute?.mode ?? ''}
+                    reports={mapReports}
+                    assets={mapAssets}
+                    startCoords={view === 'walk' && walkSession ? walkSession.pack.origin : userCoords}
+                    endCoords={activeRoute ? [activeRoute.entrance.lat, activeRoute.entrance.lng] : step === 'route' && destination && !returning ? currentDest.coords : undefined}
+                    startLabel={usingGPS ? 'You' : 'Start'}
+                    reduceMotion={prefs.reduceMotion}
+                    highContrast={prefs.highContrast}
+                    environment={walkingData ? { edges, records: walkingData.verifications, at: planningTime } : undefined}
+                    informationLayer={informationLayer}
+                    onInformationLayerChange={setInformationLayer}
+                    focusLocation={mapFocus}
+                    liveLocation={livePoint ?? undefined}
+                    selectedLocation={showReportModal ? reportPoint ?? undefined : undefined}
+                    onLocationSelect={pickingHazard ? chooseReportPoint : undefined}
+                />
+                {pickingHazard
+                    ? <div className="tg-pick" role="status"><span>Tap the map at the hazard.</span><button className="tg-close" type="button" aria-label="Cancel picking a location" onClick={() => { setPickingHazard(false); setShowReportModal(true); }}><X size={19} aria-hidden /></button></div>
+                    : <button type="button" className="tg-map-report" onClick={openReport}><AlertTriangle size={19} aria-hidden /> Report hazard</button>}
             </div>
 
-            {/* ---------------- Bottom panel ---------------- */}
             <section id="walk-planning" aria-label="Walk planning" tabIndex={-1} className="tg-sheet">
-                <div className="mb-3"><PilotSelector area={area} onChange={changeArea}/><p className="mt-1 text-xs text-slate-600">{configuration.description}</p></div>
-                {view !== 'saved' && <button className="mb-3 min-h-11 text-sm font-bold underline lg:hidden" aria-expanded={panelExpanded} aria-controls="walk-planning" onClick={() => setPanelExpanded(v => !v)}>{panelExpanded ? 'Show map' : 'Expand panel'}</button>}
+                <div className="tg-sheet-handle" aria-hidden />
+                {(view === 'explore' || view === 'walk') && <button type="button" className="tg-text-action lg:hidden"
+                    aria-expanded={panelExpanded} onClick={() => setPanelExpanded(expanded => !expanded)}>{panelExpanded ? 'Show map' : 'Expand panel'}</button>}
                 {libraryMessage && <div role="status" className="tg-note mb-3"><p>{libraryMessage}</p><button className="min-h-11 text-sm font-bold underline" onClick={() => setLibraryMessage(null)}>Dismiss message</button></div>}
                 {view === 'explore' && <ExploreWalks nodes={nodes} edges={edges} data={walkingData} request={toolRequest} hazards={hazards} onChoose={chooseFacility} onReturn={planReturn}
                     onLocate={handleGetLocation} locating={geoBusy} locationLabel={originLabel} locationMessage={geoMsg}
@@ -832,194 +812,102 @@ function ResidentPageContent() {
                     onUsePace={speed => { setNeeds(n => ({ ...n, speed_mps: speed })); setLibraryMessage('Your personal pace is selected for this walking profile.'); }} onShare={shareUpdate} />}
                 {view === 'walk' && !walkSession && <div className="tg-stack"><h1 className="tg-h2">Ready when you are</h1><p className="tg-small">Choose and review a route first. During the walk you can pause, optionally record GPS, and save how it felt.</p><button className="tg-btn tg-btn-primary" onClick={() => { setView('plan'); setStep('where'); }}>Plan a walk</button></div>}
 
-                {/* STEP 1: where to */}
                 {view === 'plan' && step === 'where' && (
                     <div className="tg-stack">
-                        <h1 className="tg-h2">Where are you going?</h1>
-                        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Walk type"><button className="tg-btn" aria-pressed={!returning} onClick={() => setReturning(false)}>Go to a place</button><button className="tg-btn" aria-pressed={returning} onClick={() => setReturning(true)}>Return to start</button></div>
-                        {returning && <p className="tg-note">Finish where you start. Choose a total budget in My walking needs, or try a quick return walk below.</p>}
-                        {returning && <div className="grid grid-cols-2 gap-2">{[15,30].map(n => <button className="tg-btn" key={n} onClick={() => planReturn(n)}>Up to {n} min</button>)}</div>}
-
-                        {!returning&&<label className="tg-label">Find a place<input type="search" className="tg-input mt-1" value={placeQuery} onChange={e=>{setPlaceQuery(e.target.value);setPlaceLimit(12);}} placeholder="Attraction, food, clinic or station" /></label>}
-                        {!returning && <div role="radiogroup" aria-label="Destination" className="tg-stack">
-                            {shownPlaces.map((place) => { const d = { ...place, id: place.external_id || place.id }; return (
-                                <button
-                                    key={d.id}
-                                    role="radio"
-                                    aria-checked={destination?.id === place.id}
-                                    className="tg-card"
-                                    onClick={() => chooseDest(d.id)}
-                                >
-                                    {destination?.id === place.id
-                                        ? <CheckCircle2 size={24} aria-hidden style={{ flexShrink: 0 }} />
-                                        : <Circle size={24} aria-hidden style={{ flexShrink: 0 }} />}
-                                    <span style={{ flex: 1, fontWeight: 800 }}>{d.name}</span>
-                                    <MapPin size={24} aria-hidden style={{ flexShrink: 0 }} />
-                                </button>
-                            ); })}
+                        <div className="tg-sheet-row">
+                            <div><p className="tg-label">Starting from</p><p className="font-bold">{originLabel}</p></div>
+                            {!isDefaultOrigin && <button type="button" className="tg-text-action" onClick={useDefaultOrigin}>Use area start</button>}
+                        </div>
+                        {suggestedPlaces.length > 0 && <div className="tg-suggestions" aria-label="Suggested destinations">
+                            {suggestedPlaces.map(place => <button key={place.id} type="button" onClick={() => selectSearchResult(place)}><MapPin size={15} aria-hidden />{place.name}</button>)}
                         </div>}
-                        {!returning&&matchingPlaces.length>shownPlaces.length&&<button className="min-h-11 text-left text-sm font-bold underline" onClick={()=>setPlaceLimit(n=>n+12)}>Show more mapped places</button>}
-                        {!returning&&placeQuery&&!matchingPlaces.length&&<p role="status" className="text-sm">No mapped places match this search.</p>}
-
-                        <div className="tg-stack" style={{ gap: '.4rem' }}>
-                            <div className="flex items-center justify-between gap-2">
-                                <div style={{ minWidth: 0 }}>
-                                    <p className="tg-label">Starting from</p>
-                                    <p style={{ fontWeight: 800, margin: 0 }}>{originLabel}</p>
+                        <WeatherStrip weather={weather} now={planningNow} />
+                        <details className="tg-details" onToggle={event => setPanelExpanded(event.currentTarget.open)}>
+                            <summary>Walking options and area data</summary>
+                            <div className="tg-stack mt-3">
+                                <div role="group" aria-label="Who is walking" className="grid grid-cols-2 gap-2">
+                                    {(Object.keys(PROFILES) as Profile[]).map(p => <button key={p} type="button" aria-pressed={profile === p}
+                                        className="tg-card tg-card-center" onClick={() => chooseProfile(p)}>
+                                        {profile === p && <Check size={18} aria-hidden />}{PROFILES[p].label}
+                                    </button>)}
                                 </div>
-                                {usingGPS || !isDefaultOrigin ? (
-                                    <button className="tg-btn" style={{ width: 'auto', flexShrink: 0 }} onClick={useDefaultOrigin}>
-                                        Use area start
-                                    </button>
-                                ) : (
-                                    <button className="tg-btn" style={{ width: 'auto', flexShrink: 0 }} onClick={handleGetLocation} disabled={geoBusy}>
-                                        <LocateFixed size={22} aria-hidden />
-                                        {geoBusy ? 'Finding…' : 'My location'}
-                                    </button>
-                                )}
+                                {planningControls}
+                                <PaceCalibration history={library.history} profile={profile} current={needs.speed_mps} onUse={speed => setNeeds(n => ({ ...n, speed_mps: speed }))} />
+                                <div className="grid grid-cols-2 gap-2">{[15,30].map(n => <button className="tg-btn" key={n} onClick={() => planReturn(n)}>Return walk · {n} min</button>)}</div>
+                                {destination && <button className="tg-btn tg-btn-primary" onClick={() => selectSearchResult(destination)}>Plan to {destination.name}</button>}
+                                <PlaceDiscovery snapshot={planningSnapshot} request={toolRequest} budget={needs.budget_min} onChoose={selectSearchResult} />
+                                <button type="button" className="tg-text-action text-left" onClick={() => setReloadVersion(version => version + 1)}>Refresh paths and checks</button>
+                                <Link href={`/verification?area=${area}`} className="inline-flex min-h-11 items-center font-bold underline">Places and verification coverage</Link>
+                                <PilotSources area={area} context={pilotData??undefined} onFocus={focusWalkPoint} />
                             </div>
-                            {geoMsg && <p className="tg-note tg-warnbox" role="alert">{geoMsg}</p>}
-                        </div>
-
-                        <div className="tg-stack" style={{ gap: '.4rem' }}>
-                            <p className="tg-label">Who is walking?</p>
-                            <div role="radiogroup" aria-label="Who is walking" className="grid grid-cols-2 gap-2">
-                                {(Object.keys(PROFILES) as Profile[]).map((p) => (
-                                    <button
-                                        key={p}
-                                        role="radio"
-                                        aria-checked={profile === p}
-                                        className="tg-card tg-card-center"
-                                        onClick={() => chooseProfile(p)}
-                                    >
-                                        {profile === p && <Check size={22} aria-hidden />}
-                                        {PROFILES[p].label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {planningControls}
-                        <PaceCalibration history={library.history} profile={profile} current={needs.speed_mps} onUse={speed => setNeeds(n => ({ ...n, speed_mps: speed }))} />
-                        <WalkingConditions night={isNight} forecast={forecast} onCompare={mode => { setChosenMode(mode); setStep('route'); }}
-                            onInspectCover={() => { setInformationLayer('cover'); setStep('route'); }} />
-                        <PlaceDiscovery snapshot={planningSnapshot} request={toolRequest} budget={needs.budget_min} onChoose={(asset: WalkingAsset) => {
-                            chooseDest(asset.external_id || asset.id); setStep('route');
-                        }} />
-                        <div className="flex flex-wrap gap-3 text-sm font-bold">
-                            <button type="button" onClick={() => setReloadVersion(v => v + 1)} className="min-h-11 underline">Refresh paths & checks</button>
-                            <Link href={`/verification?area=${area}`} className="inline-flex min-h-11 items-center underline">Places and verification coverage</Link>
-                        </div>
-                        <PilotSources area={area} context={pilotData??undefined} onFocus={focusWalkPoint}/>
-                        <button className="tg-btn tg-btn-primary" onClick={() => { buzz(); setStep('route'); }}>
-                            Show my routes
-                        </button>
+                        </details>
                     </div>
                 )}
 
-                {/* STEP 2: choose a route */}
                 {view === 'plan' && step === 'route' && (
                     <div className="tg-stack">
-                        <div className="flex items-center gap-3">
-                            <button className="tg-btn" style={{ width: 'auto' }} onClick={() => setStep('where')}>
-                                <ArrowLeft size={22} aria-hidden /> Back
-                            </button>
-                            <p className="tg-small" style={{ margin: 0, flex: 1 }}>
-                                {returning ? <>Back to <b>your starting point</b></> : <>To <b>{currentDest.name}</b></>}
-                            </p>
+                        <div className="tg-sheet-row">
+                            <div className="min-w-0">
+                                <h1 className="tg-h2">Choose a route</h1>
+                                <p className="tg-small truncate">{returning ? 'Return to your starting point' : `To ${currentDest.name}`}</p>
+                            </div>
+                            <button type="button" aria-label="Close route options" className="tg-close" onClick={() => { setStep('where'); setPanelExpanded(false); }}><X size={21} aria-hidden /></button>
                         </div>
-
-                        <h1 className="tg-h2">Choose your route</h1>
-                        {planningControls}
-                        {!returning && entrances.length > 0 && <label className="tg-label" htmlFor="arrival-entrance">Arrival access point
-                            <select id="arrival-entrance" className="tg-input" style={{ minHeight: '3rem' }} value={entranceId} onChange={e => { setEntranceId(e.target.value); setChosenMode(null); }}>
-                                <option value="">Best available access point</option>
-                                {entrances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                            </select>
-                        </label>}
-
-
-                        {loadingDb||journeySearch.pending ? (
-                            <p className="tg-note" role="status">{loadingDb?'Loading footpaths…':'Checking routes and your walking needs…'}</p>
+                        {loadingDb || journeySearch.pending ? (
+                            <p className="tg-note" role="status">{loadingDb ? 'Loading footpaths…' : 'Finding walking routes…'}</p>
                         ) : !plan || !activeRoute ? (
-                            <div className="tg-note tg-warnbox" role="alert">
+                            <div className="tg-note tg-warnbox" role="status">
                                 <RouteQualityBar />
-                                {plan?.reasons.map(reason => <span key={reason} style={{ display: 'block', marginTop: '.5rem' }}>{reason}</span>)}
-                                {!plan && (journeySearch.error||'Load walking data and choose a mapped place to plan a trip.')}
+                                {plan?.reasons.map(reason => <p key={reason} className="mt-2">{reason}</p>)}
+                                {!plan && <p>{journeySearch.error || 'Choose a mapped place to plan a trip.'}</p>}
                             </div>
                         ) : (
-                            <>
-                                <RouteQualityBar route={activeRoute} best={shownMode === recommended} />
-                                <div role="radiogroup" aria-label="Route choices" className="tg-stack">
-                                    {visibleModes.map((m) => {
-                                        const r = plan.routes[m];
-                                        if (!r) return null;
-                                        const isActive = shownMode === m;
-                                        const Icon = MODE_ICON[m];
-                                        return (
-                                            <button
-                                                key={m}
-                                                role="radio"
-                                                aria-checked={isActive}
-                                                className="tg-card"
-                                                onClick={() => chooseMode(m)}
-                                            >
-                                                {isActive
-                                                    ? <CheckCircle2 size={24} aria-hidden style={{ flexShrink: 0 }} />
-                                                    : <Circle size={24} aria-hidden style={{ flexShrink: 0 }} />}
-                                                <span style={{ flex: 1, minWidth: 0 }}>
-                                                    <span className="flex flex-wrap items-center gap-2">
-                                                        <Icon size={22} aria-hidden />
-                                                        <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{MODE_LABEL[m]}</span>
-                                                        {m === recommended && <span className="tg-badge">Recommended</span>}
-                                                    </span>
-                                                    <span className="mt-2 block"><RouteQualityBar route={r} best={m === recommended} compact /></span>
-                                                    <span className="tg-small" style={{ display: 'block', marginTop: 2 }}>
-                                                        {reasonFor(m, r, isNight)}
-                                                    </span>
-                                                </span>
-                                                <span style={{ textAlign: 'right', flexShrink: 0 }}>
-                                                    <span style={{ display: 'block', fontWeight: 800, fontSize: '1.3rem', lineHeight: 1.1 }}>
-                                                        {minutesOf(r)} min
-                                                    </span>
-                                                    <span className="tg-small" style={{ display: 'block' }}>{Math.round(r.length_m)} m</span>
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                <ComfortBreakdown route={activeRoute} edges={edges} records={walkingData?.verifications ?? []} night={isNight} />
-                                <WalkTimeline route={activeRoute} edges={edges} records={walkingData?.verifications ?? []} onFocus={focusWalkPoint} />
-                                <RouteDetails route={activeRoute} />
-                                <p className="tg-small" style={{ margin: 0 }}>
-                                    On the map: solid line is Shortest, dashed is Shadiest, dotted is Best lit. Your chosen route is thicker.
-                                </p>
-                            </>
-                        )}
-                        {activeRoute && <details className="rounded-xl border-2 border-slate-300 p-3">
-                            <summary className="min-h-8 cursor-pointer font-bold">Keep this walk</summary>
-                            <div className="mt-3 tg-stack">
-                                <button className="tg-btn" disabled={savingPack} onClick={() => void savePack()}><Bookmark size={20} aria-hidden />{savingPack ? 'Preparing offline access…' : 'Save walk for offline'}</button>
-                                <button className="tg-btn" onClick={() => { if (walkingData) downloadPack(createWalkPack(activeRoute,profile,needs,userCoords,edges,walkingData,undefined,networkSnapshot)); }}>Download a walk pack</button>
-                                <p className="tg-small">Saved packs include a route sketch, instructions, mapped facilities and dated conditions. Recheck before setting out.</p>
+                            <div role="group" aria-label="Route choices" className="tg-route-grid">
+                                {visibleModes.map(mode => {
+                                    const route = plan.routes[mode]!;
+                                    const Icon = MODE_ICON[mode];
+                                    return <button type="button" key={mode} aria-pressed={shownMode === mode}
+                                        className="tg-route-card" onClick={() => { chooseMode(mode); setMapFocus(undefined); }}>
+                                        <Icon size={18} aria-hidden />
+                                        <strong>{mode === 'safest' && !isNight ? 'Crossings' : MODE_LABEL[mode]}</strong>
+                                        <span>{minutesOf(route)} min</span>
+                                    </button>;
+                                })}
                             </div>
-                        </details>}
-                        {quickUpdate}
-
-                        <div className={`grid gap-2 ${canSpeak ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                            {canSpeak && (
-                                <button className="tg-btn" onClick={readRouteAloud} disabled={!activeRoute}>
-                                    <Volume2 size={22} aria-hidden /> Read aloud
-                                </button>
-                            )}
-                            <button className="tg-btn" onClick={openShare} disabled={!activeRoute}>
-                                <Share2 size={22} aria-hidden /> Share plan
-                            </button>
-                        </div>
-
-                        <button className="tg-btn tg-btn-primary" onClick={startWalk} disabled={loadingDb ||journeySearch.pending||startingWalk|| !activeRoute}>
-                            <Navigation size={24} aria-hidden />{startingWalk?'Checking before you start…':'Start walking'}
+                        )}
+                        {activeRoute && <div className="tg-route-note">
+                            <RouteQualityBar route={activeRoute} best={shownMode === recommended} compact />
+                            <p className="tg-small">{sameAsShortest ? 'Same path as Shortest · ' : ''}{reasonFor(shownMode, activeRoute, isNight)}</p>
+                        </div>}
+                        <button className="tg-btn tg-btn-primary" onClick={startWalk} disabled={loadingDb || journeySearch.pending || startingWalk || !activeRoute}>
+                            <Navigation size={20} aria-hidden />{startingWalk ? 'Checking your route…' : 'Start walking'}
                         </button>
+                        <details className="tg-details">
+                            <summary>Route details and walking preferences</summary>
+                            <div className="tg-stack mt-3">
+                                {planningControls}
+                                {!returning && entrances.length > 0 && <label className="tg-label">Arrival access point
+                                    <select className="tg-input" value={entranceId} onChange={event => { setEntranceId(event.target.value); setChosenMode(null); }}>
+                                        <option value="">Best available access point</option>
+                                        {entrances.map(entrance => <option key={entrance.id} value={entrance.id}>{entrance.name}</option>)}
+                                    </select>
+                                </label>}
+                                {activeRoute && <>
+                                    <ComfortBreakdown route={activeRoute} edges={edges} records={walkingData?.verifications ?? []} night={isNight} />
+                                    <WalkTimeline route={activeRoute} edges={edges} records={walkingData?.verifications ?? []} onFocus={focusWalkPoint} />
+                                    <RouteDetails route={activeRoute} />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button className="tg-btn" disabled={savingPack} onClick={() => void savePack()}><Bookmark size={18} aria-hidden />{savingPack ? 'Preparing…' : 'Save offline'}</button>
+                                        <button className="tg-btn" onClick={openShare}><Share2 size={18} aria-hidden />Share plan</button>
+                                        <button className="tg-btn" onClick={() => { if (walkingData) downloadPack(createWalkPack(activeRoute,profile,needs,userCoords,edges,walkingData,undefined,networkSnapshot)); }}>Download walk pack</button>
+                                        {canSpeak && <button className="tg-btn" onClick={readRouteAloud}><Volume2 size={18} aria-hidden />Read aloud</button>}
+                                    </div>
+                                </>}
+                                <WalkingConditions night={isNight} forecast={forecast} onCompare={mode => { setChosenMode(mode); setStep('route'); }}
+                                    onInspectCover={() => { setInformationLayer('cover'); if (plan?.routes.sheltered) chooseMode('sheltered'); }} />
+                                {quickUpdate}
+                            </div>
+                        </details>
                     </div>
                 )}
 
@@ -1030,15 +918,14 @@ function ResidentPageContent() {
                     {!sessionFinished && <div className="tg-stack mt-4">
                         <details className="rounded-xl border border-slate-300 p-3"><summary className="min-h-8 cursor-pointer font-bold">Your original walk plan</summary><p className="tg-small mt-2">Planned at {new Date(walkSession.pack.route.departure_at).toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit'})} Malaysia time. This plan stays fixed while you record; pause and review if conditions change.</p><RouteQualityBar route={walkSession.pack.route} /><WalkTimeline route={walkSession.pack.route} edges={walkSession.pack.edges} records={walkingData?.verifications ?? []} onFocus={focusWalkPoint} /></details>
                         {quickUpdate}
-                        <button disabled={IS_PAGES_PREVIEW} className="tg-btn" onClick={() => { setShowReportModal(true); setReportMsg(null); buzz(); }}><AlertTriangle size={22} aria-hidden />Report a problem</button>
-                        {IS_PAGES_PREVIEW && <p className="tg-small">Shared reporting is unavailable in this public preview. Quick condition updates can still be saved on this device.</p>}
+                        <button className="tg-btn" onClick={openReport}><AlertTriangle size={22} aria-hidden />Report a hazard</button>
                         <div className="grid grid-cols-2 gap-2"><button className="tg-btn" onClick={openShare}><Share2 size={20} aria-hidden />Share</button><a className="tg-btn" href={`tel:${EMERGENCY_NUMBER}`}><Phone size={20} aria-hidden />Call for help</a></div>
                     </div>}
                 </div>}
             </section>
             <nav className="tg-tabs" aria-label="Walking sections">{([
                 ['explore','Explore',Compass],['plan','Plan',RouteIcon],['walk','Walk',Navigation],['saved','Saved',Bookmark],
-            ] as const).map(([id,label,Icon]) => <button key={id} aria-current={view === id ? 'page' : undefined} onClick={() => { setView(id); if (id === 'plan' && step === 'walking') setStep('route'); requestAnimationFrame(() => document.getElementById('walk-planning')?.focus({preventScroll:true})); }}><Icon size={21} aria-hidden />{label}{id === 'walk' && walkSession && !sessionFinished ? ' •' : ''}</button>)}</nav>
+            ] as const).map(([id,label,Icon]) => <button key={id} aria-current={view === id ? 'page' : undefined} onClick={() => { setView(id); setSearchOpen(false); setPanelExpanded(false); if (id === 'plan' && step === 'walking') setStep('route'); requestAnimationFrame(() => document.getElementById('walk-planning')?.focus({preventScroll:true})); }}><Icon size={21} aria-hidden />{label}{id === 'walk' && walkSession && !sessionFinished ? ' •' : ''}</button>)}<button type="button" onClick={openReport}><AlertTriangle size={21} aria-hidden />Reports</button></nav>
 
             {/* ---------------- Dialogs ---------------- */}
 
@@ -1133,48 +1020,52 @@ function ResidentPageContent() {
                 </Sheet>
             )}
 
-            {showReportModal && isNavigating && (
-                <Sheet title="Report a problem" onClose={() => setShowReportModal(false)}>
-                    <div className="tg-stack">
-                        <p className="tg-label">What is the problem?</p>
-                        <div role="radiogroup" aria-label="Type of problem" className="tg-stack" style={{ gap: '.5rem' }}>
-                            {HAZARD_OPTIONS.map((o) => (
-                                <button
-                                    key={o.kind}
-                                    role="radio"
-                                    aria-checked={selectedKind === o.kind}
-                                    className="tg-card"
-                                    onClick={() => { setSelectedKind(o.kind); buzz(); }}
-                                >
-                                    <o.Icon size={26} aria-hidden style={{ flexShrink: 0 }} />
-                                    <span style={{ flex: 1 }}>
-                                        <span style={{ display: 'block', fontWeight: 800 }}>{o.label}</span>
-                                        <span className="tg-small" style={{ display: 'block' }}>{o.hint}</span>
-                                    </span>
-                                    {selectedKind === o.kind && <CheckCircle2 size={24} aria-hidden style={{ flexShrink: 0 }} />}
-                                </button>
-                            ))}
+            {showReportModal && (
+                <Sheet title="Report a hazard" onClose={() => setShowReportModal(false)}>
+                    <form className="tg-stack" onSubmit={event => { event.preventDefault(); void submitCapexDefect(); }}>
+                        <p className="tg-small">{IS_PAGES_PREVIEW ? 'Reports are saved on this device.' : 'Reports go to the maintenance queue for this walking area.'}</p>
+                        <fieldset>
+                            <legend className="tg-label mb-2">What’s the hazard?</legend>
+                            <div className="tg-report-categories">
+                                {HAZARD_OPTIONS.map(({ kind, label, Icon }) => <label key={kind}>
+                                    <input className="sr-only" type="radio" name="report-kind" value={kind} checked={selectedKind === kind}
+                                        onChange={() => { setSelectedKind(kind); buzz(); }} />
+                                    <span><Icon size={18} aria-hidden />{label}</span>
+                                </label>)}
+                            </div>
+                        </fieldset>
+                        <div className="tg-report-location">
+                            <p className="tg-label">Incident location</p>
+                            <p className="flex items-center gap-2 text-sm"><MapPin size={18} aria-hidden />
+                                {reportPoint ? reportEdge ? `${reportEdge.name || 'Mapped footpath'} · ${reportPoint.map(value => value.toFixed(5)).join(', ')}`
+                                    : 'Choose a point near a mapped path in this area.' : 'Choose where you saw the hazard.'}
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button type="button" className="tg-btn" onClick={() => { setShowReportModal(false); if (view === 'saved') setView('plan'); setPanelExpanded(false); setPickingHazard(true); }}>Pick on map</button>
+                                <button type="button" className="tg-btn" disabled={reportLocated} onClick={locateReport}>{reportLocated ? 'Finding…' : 'My location'}</button>
+                            </div>
                         </div>
-
-                        <label htmlFor="report-notes" className="tg-label">Add details (optional)</label>
-                        <textarea
-                            id="report-notes"
-                            className="tg-input"
-                            value={reportNotes}
-                            onChange={(e) => setReportNotes(e.target.value)}
-                            placeholder="For example: near the bus stop, left side of the path"
-                        />
-
-                        <p className="tg-small" style={{ margin: 0 }}>We will use your current position as the place of the problem.</p>
-
-                        <div role="status" aria-live="polite">
-                            {reportMsg && <p className="tg-note" style={{ margin: 0 }}>{reportMsg}</p>}
-                        </div>
-
-                        <button className="tg-btn tg-btn-primary" onClick={submitCapexDefect} disabled={isSubmittingReport}>
-                            <Send size={22} aria-hidden /> {isSubmittingReport ? 'Sending…' : 'Send report'}
+                        <label className="tg-label">Details (optional)<textarea className="tg-input mt-1" value={reportNotes} maxLength={500}
+                            onChange={event => setReportNotes(event.target.value)} placeholder="For example, a loose slab beside the crossing" /></label>
+                        {reportMsg && <p className="tg-note" role="status">{reportMsg}</p>}
+                        <button type="submit" className="tg-btn tg-btn-primary" disabled={loadingDb || isSubmittingReport || !reportEdge}>
+                            <Send size={18} aria-hidden /> {isSubmittingReport ? 'Saving…' : IS_PAGES_PREVIEW ? 'Save report' : 'Submit report'}
                         </button>
-                    </div>
+                    </form>
+                    {(IS_PAGES_PREVIEW ? deviceHazards.length > 0 : reports.length > 0) && <details className="tg-details mt-3" open={Boolean(reportMsg)}>
+                        <summary>{IS_PAGES_PREVIEW ? `Saved on this device (${deviceHazards.length})` : `Open area reports (${reports.length})`}</summary>
+                        <ul className="tg-report-list">
+                            {(IS_PAGES_PREVIEW ? deviceHazards : reports).map((report, index) => <li key={report.id ?? index}>
+                                <strong>{report.category || 'Reported hazard'}</strong>
+                                {report.description && <p>{report.description}</p>}
+                                {'location' in report && typeof report.location === 'string' && <p>{report.location}</p>}
+                                {IS_PAGES_PREVIEW && <button type="button" className="tg-text-action" onClick={() => {
+                                    try { updateDeviceHazards(deviceHazards.filter(saved => saved.id !== report.id)); }
+                                    catch { setReportMsg('Could not remove the saved report.'); }
+                                }}>Remove from device</button>}
+                            </li>)}
+                        </ul>
+                    </details>}
                 </Sheet>
             )}
 

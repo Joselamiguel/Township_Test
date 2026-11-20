@@ -1,17 +1,25 @@
 import { DEFAULT_ORIGIN, DESTINATIONS } from './precinct.ts';
 
-export type PilotId = 'pasar-seni' | 'elmina';
+export type PilotId = 'pasar-seni' | 'um-campus' | 'elmina';
 // The Pages builder derives this public flag from the validated source files.
 // The server version checks its imported datasets through its API instead.
 export const KL_PILOT_AVAILABLE = process.env.NEXT_PUBLIC_SITE_MODE !== 'pages'
     || process.env.NEXT_PUBLIC_KL_PILOT_AVAILABLE === 'true';
-export const DEFAULT_PILOT: PilotId = KL_PILOT_AVAILABLE ? 'pasar-seni' : 'elmina';
+const UM_PILOT_AVAILABLE = process.env.NEXT_PUBLIC_SITE_MODE !== 'pages'
+    || process.env.NEXT_PUBLIC_UM_PILOT_AVAILABLE === 'true';
+export const DEFAULT_PILOT: PilotId = KL_PILOT_AVAILABLE ? 'pasar-seni' : UM_PILOT_AVAILABLE ? 'um-campus' : 'elmina';
 export const PILOTS = {
     'pasar-seni': { id: 'pasar-seni' as const, name: 'Pasar Seni · Chinatown · Masjid Jamek', short_name: 'Central KL pilot',
         description: 'Discover places, facilities and pedestrian connections around the stations and heritage streets.',
         bounds: [3.133, 101.685, 3.157, 101.708] as [number, number, number, number],
         centre: [3.1425, 101.6955] as [number, number], origin_label: 'Pasar Seni walking start', edge_offset: 1000000000, asset_offset: 2000000000,
         role: 'pilot', district: 'W.P. Kuala Lumpur', preferred_names: ['Central Market', 'Pasar Seni', 'Petaling Street', 'Masjid Jamek', 'Jamek Mosque', 'Dataran Merdeka'],
+    },
+    'um-campus': { id: 'um-campus' as const, name: 'Universiti Malaya campus', short_name: 'UM campus',
+        description: 'Explore mapped campus paths, entrances and shelters around Universiti Malaya.',
+        bounds: [3.109, 101.634, 3.136, 101.671] as [number, number, number, number],
+        centre: [3.1212, 101.6535] as [number, number], origin_label: 'UM campus walking start', edge_offset: 3000000000, asset_offset: 4000000000,
+        role: 'pilot', district: 'W.P. Kuala Lumpur', preferred_names: ['Main Library', 'Dewan Kuliah 3', 'Dewan Tunku Canselor', 'Faculty of Science', 'Perdanasiswa', 'Universiti'],
     },
     elmina: { id: 'elmina' as const, name: 'Elmina bridges example', short_name: 'Elmina example',
         description: 'Learn the planner with the original two mapped bridge destinations.',
@@ -21,8 +29,12 @@ export const PILOTS = {
     },
 };
 
-export function isPilot(value: unknown): value is PilotId { return value === 'pasar-seni' || value === 'elmina'; }
-export function isPilotAvailable(area: PilotId) { return area === 'elmina' || KL_PILOT_AVAILABLE; }
+export function isPilot(value: unknown): value is PilotId {
+    return typeof value === 'string' && Object.hasOwn(PILOTS, value);
+}
+export function isPilotAvailable(area: PilotId) {
+    return area === 'elmina' || (area === 'um-campus' ? UM_PILOT_AVAILABLE : KL_PILOT_AVAILABLE);
+}
 export function pilotFromParams(params: Pick<URLSearchParams, 'get'>): PilotId {
     const requested = params.get('area');
     if (isPilot(requested)) return requested;

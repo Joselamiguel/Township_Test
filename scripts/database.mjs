@@ -7,6 +7,8 @@ import dotenv from 'dotenv';
 import { getPool, closePool } from '../lib/server/postgres.ts';
 import { seedWalkingData } from './seed-walking-data.mjs';
 import { seedPilotArea } from './seed-pilot-area.mjs';
+import { loadPagesPilot } from './pilot-export.mjs';
+import { PILOTS } from '../lib/pilots.ts';
 
 dotenv.config({ path: '.env.local', quiet: true });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -83,10 +85,11 @@ try {
     if (command === 'setup' || command === 'seed') await seed();
     if(command==='setup'||command==='seed'){
       await seedWalkingData(getPool(), source);
-      try {
-        const bundle=JSON.parse(await readFile(resolve(root,'data/pasar-seni/bundle.json'),'utf8'));
-        await seedPilotArea(getPool(),bundle);
-      }catch(error){if(error.code!=='ENOENT')throw error;console.log('Central KL source bundle is not present yet; the Elmina example remains available.');}
+      for (const area of ['pasar-seni', 'um-campus']) {
+        const bundle = await loadPagesPilot(resolve(root, `data/${area}/bundle.json`), area);
+        if (bundle) await seedPilotArea(getPool(), bundle);
+        else console.log(`${PILOTS[area].short_name} source bundle is not present.`);
+      }
     }
 } catch (error) {
     // PostgreSQL errors can include connection details; print a code instead of credentials.

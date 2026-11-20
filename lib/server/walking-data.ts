@@ -2,7 +2,7 @@ import 'server-only';
 import { getPool } from './postgres.ts';
 import { RequestError, validateReportId } from './validation.ts';
 import type { AssetKind, ObservationValue, PlaceCategory, VerificationRecord, VerificationTarget } from '../walking.ts';
-import type { PilotId } from '../pilots.ts';
+import { PILOTS, type PilotId } from '../pilots.ts';
 import { validateArea } from './pilots.ts';
 
 const KINDS: AssetKind[] = ['destination', 'entrance', 'rest', 'shelter', 'toilet', 'water', 'transit'];
@@ -53,7 +53,7 @@ export async function walkingData(area:PilotId='elmina') {
             method, source_ref, notes, attributes, created_at FROM verification_records WHERE area_id=$1 ORDER BY observed_at DESC, id DESC`,[area]),
     ]);
     const meta=await getPool().query('SELECT value FROM app_metadata WHERE key=$1',[`pilot:${area}:revision`]);
-    if(area==='pasar-seni'&&!meta.rows[0])throw new RequestError('The central KL walking dataset has not been imported into this server yet.',503);
+    if(area!=='elmina'&&!meta.rows[0])throw new RequestError(`The ${PILOTS[area].short_name} walking dataset has not been imported into this server yet.`,503);
     return { assets: assets.rows, verifications: records.rows, as_of: new Date().toISOString(),area_id:area,dataset_id:meta.rows[0]?.value??'elmina-original' };
 }
 

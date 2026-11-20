@@ -2,7 +2,7 @@
  * AksesMy routing engine.
  *
  * Replaces hand-drawn route_segments with real shortest-path search over a pedestrian graph.
- * One engine, three weight sets (direct / coolest / safest), four user profiles.
+ * One engine with route-specific weights, four user profiles.
  */
 
 // ---------------------------------------------------------------------------
@@ -11,7 +11,7 @@
 export type DataSource = 'audited' | 'reported' | 'modelled' | 'assumed';
 export type Profile = 'senior' | 'cane_walker' | 'wheelchair';
 export type TimeSlot = 'morning' | 'midday' | 'afternoon' | 'night';
-export type Mode = 'direct' | 'coolest' | 'safest';
+export type Mode = 'direct' | 'coolest' | 'sheltered' | 'safest';
 export type HazardKind = 'blocked' | 'no_ramp' | 'light_out' | 'no_shade' | 'broken_surface';
 export type HazardStatus = 'open' | 'verified' | 'fixed';
 
@@ -93,7 +93,7 @@ export const ASSUMPTIONS = {
     slope_free_pct: 3,
     slope_time_gain_per_pct: 0.05,
     rough_time_factor: 1.3,
-    street_factor: { direct: 1.0, coolest: 1.2, safest: 1.8 } as Record<Mode, number>,
+    street_factor: { direct: 1.0, coolest: 1.2, sheltered: 1.2, safest: 1.8 } as Record<Mode, number>,
     unsignalised_wait_s: 10,
     unknown_signal_wait_s: 30,
     wide_unsignalised_m: 10,
@@ -106,6 +106,7 @@ export const ASSUMPTIONS = {
 export const MODE_WEIGHTS: Record<Mode, { heat: number; dark: number; risk: number }> = {
     direct: { heat: 0, dark: 0, risk: 1 },
     coolest: { heat: 6.0, dark: 1.0, risk: 2 },
+    sheltered: { heat: 0, dark: 1.0, risk: 2 },
     safest: { heat: 1.0, dark: 12.0, risk: 30 },
 };
 
@@ -441,9 +442,10 @@ export function evaluateEdge(e: PathEdge, ctx: CostContext): EdgeEval {
     const dark_m = isNight ? length_m * (1 - lit) : 0;
     const heat = isNight ? 0 : sun_s * w.heat * (ctx.heatMultiplier ?? 1);
     const dark = isNight ? walk_s * (1 - lit) * w.dark : 0;
+    const rainExposure = ctx.mode === 'sheltered' && e.covered !== true ? walk_s * 4 : 0;
 
     return {
-        cost: walk_s + wait_s + penalty + heat + dark,
+        cost: walk_s + wait_s + penalty + heat + dark + rainExposure,
         walk_s, wait_s, hard, notes,
         shade, shade_src: sh.src, lit, lit_src: li.src,
         sun_s, dark_m, shortfall,

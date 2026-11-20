@@ -30,7 +30,9 @@ assert.ok(metadata.areas.includes('elmina'),'Keep the working Elmina example ava
 assert.ok(metadata.areas.includes(metadata.default_area),'The default area needs actual source data.');
 const klReady=metadata.areas.includes('pasar-seni');
 assert.equal(metadata.pilot_status['pasar-seni'],klReady?'available':'awaiting-source-data');
-assert.equal(metadata.default_area,klReady?'pasar-seni':'elmina');
+const umReady=metadata.areas.includes('um-campus');
+assert.equal(metadata.pilot_status['um-campus'],umReady?'available':'awaiting-source-data');
+assert.equal(metadata.default_area,klReady?'pasar-seni':umReady?'um-campus':'elmina');
 if(!klReady){
     const home=await readFile(new URL('index.html',out),'utf8');
     assert.ok(home.includes('Central KL pilot · data pending'),'The public site must explain the pending KL source.');
@@ -40,8 +42,11 @@ const areaCounts=[];
 for(const area of metadata.areas){
     const read=async name=>JSON.parse(await readFile(new URL(`pilot/${area}/${name}.json`,out),'utf8'));
     const context=await read('context');assert.equal(context.area_id,area);
+    const mapArea = JSON.parse(await readFile(new URL(`map-area/${area}.geojson`, out), 'utf8'));
+    assert.ok(mapArea.features.length, `Missing local basemap for ${area}.`);
+    if (area === 'um-campus') assert.ok(mapArea.features.some(feature => feature.properties.kind === 'building'), 'UM needs mapped 3D building footprints.');
     const areaGraph=await read('graph');areaCounts.push(`${area}: ${areaGraph.edges.length} pedestrian segments`);
-    if(area==='pasar-seni'){
+    if(area!=='elmina'){
         validatePilotSnapshot({area_id:area,graph:areaGraph,walking:await read('walking-data'),hazards:await read('hazards'),reports:await read('reports'),context});
         for(const name of ['paths','places','transit','satellite']){
             const layer=JSON.parse(await readFile(new URL(`pilot/${area}/gis/${name}.geojson`,out),'utf8'));
