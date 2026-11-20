@@ -521,3 +521,43 @@
 .tg-report-photo { float: right; width: 3.25rem; height: 3.25rem; object-fit: cover; border-radius: .5rem; margin-left: .5rem; }
 .tg.hc .tg-photo-add { border-color: #000; }
 .tg-photo-reason { display: block; margin-top: .2rem; font-size: .75rem; opacity: .8; overflow-wrap: anywhere; }
+
+/* Saved walking profile: card on the plan screen and the first-run setup */
+.tg-profile-card { display: flex; align-items: center; gap: .65rem; width: 100%; padding: .6rem .75rem; border-radius: 14px;
+    border: var(--bw) solid var(--line); background: var(--brand-soft); color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.tg-profile-card > svg { flex: none; color: var(--brand); }
+.tg-profile-card > span:nth-child(2) { flex: 1; min-width: 0; display: grid; line-height: 1.25; }
+.tg-profile-card small { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.tg-profile-card strong { font-size: .95rem; }
+.tg-profile-card span span { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tg-profile-edit { flex: none; display: flex; align-items: center; gap: .25rem; font-size: .82rem; font-weight: 800; color: var(--brand); }
+
+.tg-setup { width: 100%; max-width: 30rem; max-height: 100dvh; height: 100dvh; margin: 0 auto; padding: 0; border: 0; background: var(--surface); color: var(--ink); }
+.tg-setup::backdrop { background: rgba(20, 16, 30, .55); }
+@media (min-width: 640px) { .tg-setup { height: auto; max-height: 92dvh; margin: auto; border-radius: 1.25rem; } }
+.tg-setup-panel { min-height: 100%; display: flex; flex-direction: column; gap: 1rem; padding: 1rem 1.1rem max(1.1rem, env(safe-area-inset-bottom)); }
+@media (min-width: 640px) { .tg-setup-panel { min-height: 0; } }
+.tg-setup-top { display: grid; grid-template-columns: 2.75rem 1fr auto; align-items: center; gap: .5rem; }
+.tg-setup-spacer { width: 2.75rem; }
+.tg-setup-dots { display: flex; justify-content: center; gap: .4rem; list-style: none; margin: 0; padding: 0; }
+.tg-setup-dots li { width: 1.6rem; height: .3rem; border-radius: 99px; background: var(--line); transition: background .25s ease; }
+.tg-setup-dots li[data-done="true"] { background: var(--brand); }
+.tg-setup-body { flex: 1; display: grid; align-content: start; gap: .7rem; animation: tg-setup-in .28s cubic-bezier(.22, .9, .3, 1); }
+@keyframes tg-setup-in { from { opacity: 0; transform: translateX(1.25rem); } to { opacity: 1; transform: none; } }
+.tg-setup-kicker { margin: 0; font-size: .8rem; font-weight: 800; color: var(--brand); text-transform: uppercase; letter-spacing: .05em; }
+.tg-setup-option { display: flex; align-items: center; gap: .75rem; width: 100%; min-height: 3.6rem; padding: .6rem .8rem; border-radius: 14px;
+    border: var(--bw) solid var(--line); background: #fff; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.tg-setup-option > svg { flex: none; color: var(--brand); }
+.tg-setup-option > span:nth-child(2) { flex: 1; display: grid; line-height: 1.3; }
+.tg-setup-option small { color: var(--muted); font-size: .82rem; }
+.tg-setup-option[aria-checked="true"] { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 2px var(--brand); }
+.tg-setup-option:disabled { cursor: default; opacity: .85; }
+.tg-setup-tick { flex: none; width: 1.5rem; height: 1.5rem; border-radius: .45rem; border: 2px solid var(--line); display: grid; place-items: center; color: #fff; }
+.tg-setup-radio { border-radius: 99px; }
+.tg-setup-option[aria-checked="true"] .tg-setup-tick { background: var(--brand); border-color: var(--brand); }
+.tg-setup-sub { display: grid; gap: .5rem; padding: .65rem; border-radius: 14px; background: var(--brand-soft); }
+.tg-setup-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.tg-setup-chips button { min-height: 2.75rem; padding: .35rem .9rem; border-radius: 99px; border: var(--bw) solid var(--line); background: #fff;
+    color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
+.tg-setup-chips button[aria-checked="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
+.tg.hc .tg-setup-option, .tg.hc .tg-setup-chips button, .tg.hc .tg-profile-card { border-color: #000; }
