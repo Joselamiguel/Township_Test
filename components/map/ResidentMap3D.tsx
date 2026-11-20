@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Crosshair } from 'lucide-react';
 import {
     Map as LibreMap, AttributionControl, LngLatBounds, Marker, NavigationControl, Popup,
-    type GeoJSONSource, type StyleSpecification, type MapMouseEvent,
+    type GeoJSONSource, type StyleSpecification, type MapMouseEvent, type SymbolLayerSpecification,
 } from 'maplibre-gl';
 import type { Feature, FeatureCollection, LineString } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -17,11 +17,18 @@ import type { InteractiveMapProps } from './InteractiveMap';
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const lngLat = ([lat, lng]: [number, number]): [number, number] => [lng, lat];
 const RAIN_COLOUR = '#0e766e';
-const layerIds = ['walking-conditions', 'walking-routes'];
+const layerIds = ['walking-conditions', 'walking-routes', 'place-labels', 'building-labels', 'street-labels'];
+const labelText = {
+    'text-font': ['Noto Sans Regular'],
+    'text-field': ['get', 'name'],
+    'text-padding': 4,
+} satisfies NonNullable<SymbolLayerSpecification['layout']>;
+const labelHalo = { 'text-halo-color': '#fffefa', 'text-halo-width': 1.25 } as const;
 
 function mapStyle(area: PilotId): StyleSpecification {
     return {
         version: 8,
+        glyphs: sitePath('/map-fonts/{fontstack}/{range}.pbf'),
         light: { anchor: 'map', color: '#fffaf0', intensity: 0.45, position: [1.8, 230, 42] },
         sources: {
             area: { type: 'geojson', data: sitePath(`/map-area/${area}.geojson`),
@@ -30,22 +37,28 @@ function mapStyle(area: PilotId): StyleSpecification {
             routes: { type: 'geojson', data: empty },
         },
         layers: [
-            { id: 'ground', type: 'background', paint: { 'background-color': '#eeeae2' } },
+            { id: 'ground', type: 'background', paint: { 'background-color': '#f4f0e7' } },
             { id: 'open-spaces', type: 'fill', source: 'area', filter: ['in', ['get', 'kind'], ['literal', ['green', 'water']]],
-                paint: { 'fill-color': ['match', ['get', 'kind'], 'water', '#b6dbe0', '#cfdcc6'] } },
+                paint: { 'fill-color': ['match', ['get', 'kind'], 'water', '#b4d8ed', '#cfdfbc'] } },
+            { id: 'watercourses', type: 'line', source: 'area', filter: ['==', ['get', 'kind'], 'watercourse'],
+                paint: { 'line-color': '#99c6df', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2, 18, 5] } },
             { id: 'streets-outline', type: 'line', source: 'area', filter: ['==', ['get', 'kind'], 'street'],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
-                paint: { 'line-color': '#dddad1', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.5, 18, 12] } },
+                paint: { 'line-color': ['case', ['==', ['get', 'road'], 'major'], '#d7bc91', '#dcd6c8'],
+                    'line-width': ['interpolate', ['linear'], ['zoom'], 13, 3, 18, ['case', ['==', ['get', 'road'], 'major'], 16, 9]] } },
             { id: 'streets', type: 'line', source: 'area', filter: ['==', ['get', 'kind'], 'street'],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
-                paint: { 'line-color': '#faf9f6', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1.5, 18, 9] } },
-            { id: 'reference-paths', type: 'line', source: 'area', filter: ['==', ['get', 'kind'], 'path'],
-                paint: { 'line-color': '#a8a392', 'line-width': 1.2, 'line-opacity': 0.55, 'line-dasharray': [2, 2] } },
+                paint: { 'line-color': ['case', ['==', ['get', 'road'], 'major'], '#fae2b5', '#fffdfa'],
+                    'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1.5, 18, ['case', ['==', ['get', 'road'], 'major'], 13, 6.5]] } },
+            { id: 'railways', type: 'line', source: 'area', filter: ['==', ['get', 'kind'], 'rail'],
+                paint: { 'line-color': '#797d87', 'line-width': 2, 'line-dasharray': [2, 1.5] } },
+            { id: 'reference-paths', type: 'line', source: 'area', minzoom: 15, filter: ['==', ['get', 'kind'], 'path'],
+                paint: { 'line-color': '#928273', 'line-width': 1.2, 'line-opacity': 0.57, 'line-dasharray': [2, 2] } },
             { id: 'building-footprints', type: 'fill', source: 'area', filter: ['==', ['get', 'kind'], 'building'],
-                paint: { 'fill-color': '#c2c4ca', 'fill-outline-color': '#a9acb4' } },
+                paint: { 'fill-color': '#cbc9ca', 'fill-outline-color': '#adaaad' } },
             { id: 'building-volumes', type: 'fill-extrusion', source: 'area', filter: ['==', ['get', 'kind'], 'building'], minzoom: 15, paint: {
-                'fill-extrusion-color': '#c2c9d0', 'fill-extrusion-height': ['get', 'height'],
-                'fill-extrusion-base': ['get', 'base'], 'fill-extrusion-opacity': 0.92,
+                'fill-extrusion-color': ['match', ['get', 'use'], 'civic', '#b6cad4', 'commercial', '#cec6b9', '#cccbd1'],
+                'fill-extrusion-height': ['get', 'height'], 'fill-extrusion-base': ['get', 'base'], 'fill-extrusion-opacity': 0.92,
             } },
             { id: 'conditions-unknown', type: 'line', source: 'conditions', filter: ['!', ['get', 'known']], paint: {
                 'line-color': '#64748b', 'line-width': 2, 'line-opacity': 0.48, 'line-dasharray': [1, 2.5],
@@ -59,6 +72,21 @@ function mapStyle(area: PilotId): StyleSpecification {
             { id: 'walking-routes', type: 'line', source: 'routes', layout: {
                 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'order'],
             }, paint: { 'line-color': ['get', 'colour'], 'line-width': ['case', ['get', 'active'], 6, 3] } },
+            { id: 'street-labels', type: 'symbol', source: 'area', minzoom: 14.5,
+                filter: ['all', ['==', ['get', 'kind'], 'street'], ['has', 'name']],
+                layout: { ...labelText, 'symbol-placement': 'line', 'symbol-spacing': 250, 'text-max-angle': 35,
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 15, 10, 18, 12] },
+                paint: { ...labelHalo, 'text-color': '#534d48' } },
+            { id: 'building-labels', type: 'symbol', source: 'area', minzoom: 17.2,
+                filter: ['all', ['==', ['get', 'kind'], 'label'], ['==', ['get', 'labelKind'], 'building']],
+                layout: { ...labelText, 'text-size': 11, 'text-max-width': 11, 'text-offset': [0, .1] },
+                paint: { ...labelHalo, 'text-color': '#474352' } },
+            { id: 'place-labels', type: 'symbol', source: 'area', minzoom: 14.5,
+                filter: ['all', ['==', ['get', 'kind'], 'label'], ['!=', ['get', 'labelKind'], 'building']],
+                layout: { ...labelText, 'text-size': ['interpolate', ['linear'], ['zoom'], 15, 11, 18, 13],
+                    'text-max-width': 11, 'text-variable-anchor': ['center', 'top', 'bottom'], 'text-radial-offset': .35 },
+                paint: { ...labelHalo, 'text-color': ['match', ['get', 'labelKind'], 'station', '#1e5c78', 'green', '#466343', 'water', '#275c79', '#443650'] } },
+
         ],
     };
 }
@@ -86,10 +114,10 @@ function pin(map: LibreMap, position: [number, number], kind: string, symbol: st
     return new Marker({ element }).setLngLat(lngLat(position)).setPopup(popup).addTo(map);
 }
 
-type Props = InteractiveMapProps & { area: PilotId; segments: EnvironmentSegment[]; flat: boolean; onUnavailable: () => void };
+type Props = InteractiveMapProps & { area: PilotId; segments: EnvironmentSegment[]; onUnavailable: () => void };
 
 export default function ResidentMap3D({
-    area, segments, flat, onUnavailable, startCoords = DEFAULT_ORIGIN, endCoords, startLabel = 'Start', routes,
+    area, segments, onUnavailable, startCoords = DEFAULT_ORIGIN, endCoords, startLabel = 'Start', routes,
     activeRouteId, reports, assets, liveLocation, focusLocation, reduceMotion, highContrast,
     selectedLocation, onLocationSelect, informationLayer,
 }: Props) {
@@ -103,7 +131,7 @@ export default function ResidentMap3D({
         try {
             map = new LibreMap({
                 container: container.current, style: mapStyle(area),
-                center: lngLat(PILOTS[area].centre), zoom: 17, pitch: 47, bearing: -12,
+                center: lngLat(PILOTS[area].centre), zoom: 17, pitch: 38, bearing: -10,
                 maxPitch: 70, maxZoom: 20, attributionControl: false,
             });
         } catch {
@@ -136,21 +164,6 @@ export default function ResidentMap3D({
         return bounds;
     }, [activeCoordinates, startLat, startLng, endLat, endLng]);
     const focusLat = focusLocation?.[0], focusLng = focusLocation?.[1];
-
-    useEffect(() => {
-        const map = mapRef.current;
-        if (!loaded || !map) return;
-        map.setLayoutProperty('building-volumes', 'visibility', flat ? 'none' : 'visible');
-        map.setMaxPitch(flat ? 0 : 70);
-        if (flat) {
-            map.dragRotate.disable();
-            map.touchZoomRotate.disableRotation();
-        } else {
-            map.dragRotate.enable();
-            map.touchZoomRotate.enableRotation();
-        }
-        map.easeTo({ pitch: flat ? 0 : 47, bearing: flat ? 0 : -12, duration: reduceMotion ? 0 : 280 });
-    }, [loaded, flat, reduceMotion]);
 
     useEffect(() => {
         const map = mapRef.current;

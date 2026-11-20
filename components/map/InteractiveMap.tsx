@@ -80,13 +80,15 @@ function LocalBasemap({ url }: { url: string }) {
         return () => controller.abort();
     }, [url]);
 
-    return data && <GeoJSON data={data} interactive={false}
-        attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+    return data && <GeoJSON data={data} interactive={false} filter={feature => feature.geometry.type !== 'Point'}
         style={feature => {
             const kind = feature?.properties.kind;
             if (kind === 'building') return { color: '#a9acb4', fillColor: '#c2c4ca', fillOpacity: 0.85, weight: 1 };
             if (kind === 'green' || kind === 'water') return { stroke: false, fillColor: kind === 'water' ? '#b6dbe0' : '#cfdcc6', fillOpacity: 1 };
-            if (kind === 'street') return { color: '#fffefa', weight: 5 };
+            if (kind === 'street') return feature?.properties.road === 'major'
+                ? { color: '#e3c498', weight: 6 } : { color: '#fffefa', weight: 4 };
+            if (kind === 'watercourse') return { color: '#91b9ce', weight: 3 };
+            if (kind === 'rail') return { color: '#86909a', weight: 1.5, dashArray: '4 3' };
             return { color: '#a8a392', opacity: 0.65, weight: 1, dashArray: '3 3' };
         }} />;
 }
@@ -412,10 +414,12 @@ export default function InteractiveMap({
                 zoomControl={false}
                 preferCanvas={Boolean(localBasemap)}
             >
-                {localBasemap ? <Pane name="pilot-basemap" style={{ zIndex: 250 }}><LocalBasemap url={localBasemap} /></Pane> : <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />}
+                {localBasemap && <Pane name="pilot-basemap" style={{ zIndex: 190 }}><LocalBasemap url={localBasemap} /></Pane>}
+                <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+                    url={process.env.NEXT_PUBLIC_OSM_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'}
+                    maxNativeZoom={19}
+                />
                 <LocationPicker onSelect={onLocationSelect} />
                 {segments.map(segment => {
                     const unknown = segment.value === null;

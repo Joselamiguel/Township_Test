@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useMemo, useState } from 'react';
-import { Layers } from 'lucide-react';
+import { Box, ChevronDown, Layers, Map as MapIcon } from 'lucide-react';
 import { sitePath } from '@/lib/site';
 import type { PilotId } from '@/lib/pilots';
 import { environmentCoverage, environmentSegments, type EnvironmentLayer } from '@/lib/environment';
@@ -12,32 +12,47 @@ import './resident-map.css';
 const Map2D = dynamic(() => import('./InteractiveMap'), { ssr: false });
 const Map3D = dynamic(() => import('./ResidentMap3D'), { ssr: false });
 
+export type MapMode = '2d' | '3d';
+
 export default function ResidentMap({
-    area, informationLayer = 'routes', onInformationLayerChange, ...mapProps
-}: InteractiveMapProps & { area: PilotId }) {
-    const [flat, setFlat] = useState(false);
+    area, mapMode, onMapModeChange, informationLayer = 'routes', onInformationLayerChange, ...mapProps
+}: InteractiveMapProps & { area: PilotId; mapMode?: MapMode; onMapModeChange?: (mode: MapMode) => void }) {
+    const [localMode, setLocalMode] = useState<MapMode>('3d');
     const [failed, setFailed] = useState(false);
     const fallback = useCallback(() => setFailed(true), []);
-    const mode = flat || failed ? '2d' : '3d';
+    const mode = failed ? '2d' : mapMode ?? localMode;
+    const MapModeIcon = mode === '3d' ? Box : MapIcon;
     const { edges, records, at } = mapProps.environment ?? {};
     const segments = useMemo(() => informationLayer !== 'routes' && edges && records && at
         ? environmentSegments(edges, records, at, informationLayer) : [],
     [informationLayer, edges, records, at]);
     const coverage = environmentCoverage(segments);
 
+    function changeMode(next: MapMode) {
+        setFailed(false);
+        setLocalMode(next);
+        onMapModeChange?.(next);
+    }
+
     return (
         <div data-map-mode={mode} className="resident-map absolute inset-0 bg-[#e8ede6]" aria-label="Walking map">
-            {failed
-                ? <Map2D {...mapProps} informationLayer={informationLayer} showLayerControls={false} localBasemap={sitePath(`/map-area/${area}.geojson`)} />
-                : <Map3D {...mapProps} area={area} segments={segments} flat={flat} informationLayer={informationLayer} onUnavailable={fallback} />}
+            {mode === '2d'
+                ? <Map2D {...mapProps} informationLayer={informationLayer} showLayerControls={false}
+                    localBasemap={sitePath(`/map-area/${area}.geojson`)} />
+                : <Map3D {...mapProps} area={area} segments={segments} informationLayer={informationLayer} onUnavailable={fallback} />}
             <div className="tg-map-controls">
-                <div className="tg-map-toggle" role="group" aria-label="Map view">
-                    <button type="button" aria-pressed={mode === '3d'} onClick={() => { setFailed(false); setFlat(false); }}>3D</button>
-                    <button type="button" aria-pressed={mode === '2d'} onClick={() => setFlat(true)}>2D</button>
-                </div>
+                <label className="tg-map-choice tg-map-view">
+                    <MapModeIcon size={17} aria-hidden />
+                    <span className="sr-only">Map view</span>
+                    <select value={mode} onChange={event => changeMode(event.target.value as MapMode)}>
+                        <option value="3d">3D map</option>
+                        <option value="2d">2D map</option>
+                    </select>
+                    <ChevronDown size={14} aria-hidden />
+                </label>
                 {mapProps.environment && (
-                    <label className="tg-map-layer">
-                        <Layers size={16} aria-hidden />
+                    <label className="tg-map-choice">
+                        <Layers size={17} aria-hidden />
                         <span className="sr-only">Map information</span>
                         <select value={informationLayer} onChange={event => onInformationLayerChange?.(event.target.value as EnvironmentLayer | 'routes')}>
                             <option value="routes">Routes</option>
@@ -47,10 +62,11 @@ export default function ResidentMap({
                             <option value="lighting">Lighting</option>
                             <option value="observations">Field checks</option>
                         </select>
+                        <ChevronDown size={14} aria-hidden />
                     </label>
                 )}
                 {failed && <p role="status" className="tg-map-status">3D is unavailable on this device.</p>}
-                {!failed && informationLayer !== 'routes' && <p role="status" className="tg-map-status">
+                {informationLayer !== 'routes' && <p role="status" className="tg-map-status">
                     {informationLayer === 'paths' ? `${coverage.total} mapped paths`
                         : `${coverage.known} of ${coverage.total} paths with data · dashed gray means unknown`}
                 </p>}

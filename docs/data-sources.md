@@ -10,7 +10,11 @@ See the [UM campus source notes](../data/um-campus/README.md) for the separate c
 
 OpenStreetMap data is available under the [Open Database Licence](https://www.openstreetmap.org/copyright). Preserve **© OpenStreetMap contributors** attribution and the applicable data-licence requirements when distributing derived data. The interactive map already includes contributor attribution.
 
-The resident basemap renders committed OpenStreetMap geometry. Elmina uses its original snapshot and the [map context extract](../data/elmina/sources.json) for buildings and landscape. The dashboard still uses public tiles covered by the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+The 3D basemap draws streets, buildings, footpaths, water, parks and place labels from committed OpenStreetMap extracts. The supplementary street, rail and landscape data is used for display. The walking graphs are built from their independent pedestrian source bundles. [Pasar Seni map context](../data/pasar-seni/source/map-context-source.json) · [UM map context](../data/um-campus/source/map-context-source.json) · [Elmina map context](../data/elmina/sources.json)
+
+The 2D street map loads standard OpenStreetMap tiles over the bundled geometry. The default tile URL is `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. The build supports changing the OpenStreetMap tile endpoint with `NEXT_PUBLIC_OSM_TILE_URL`. [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
+
+The 3D map bundles Noto Sans glyphs under the SIL Open Font License for local label rendering. [Glyph source](https://github.com/maplibre/demotiles/tree/601ae60796ceceda2cbd2ed3d2ea92d17a84be4b/font/Noto%20Sans%20Regular) · [Font licence](../public/map-fonts/OFL.txt)
 
 ## Pedestrian import policy
 

@@ -12,7 +12,7 @@
     pointer-events: none;
 }
 .tg-map-controls > * { pointer-events: auto; }
-.tg-map-toggle, .tg-map-layer, .tg-map-status, .tg-map-fit {
+.tg-map-choice, .tg-map-status, .tg-map-fit {
     display: flex;
     align-items: center;
     background: #fff;
@@ -21,18 +21,18 @@
     box-shadow: 0 2px 8px #20203b23;
     color: var(--ink, #24212e);
 }
-.tg-map-toggle { padding: .16rem; }
-.tg-map-toggle button {
-    min-width: 2.75rem;
-    min-height: 2.75rem;
-    border-radius: .58rem;
-    font-size: .85rem;
-    font-weight: 800;
+.tg-map-choice { position: relative; min-height: 2.9rem; padding-inline: .52rem; }
+.tg-map-choice svg { flex: none; color: var(--brand-ink, #782036); pointer-events: none; }
+.tg-map-choice svg:last-child { position: absolute; right: .5rem; }
+.tg-map-choice select {
+    appearance: none;
+    min-height: 2.9rem;
+    padding: 0 1rem 0 .35rem;
+    font-size: .83rem;
+    font-weight: 750;
+    cursor: pointer;
 }
-.tg-map-toggle button[aria-pressed="true"] { background: var(--brand, #a12538); color: #fff; }
-.tg-map-layer { gap: .35rem; min-height: 3.2rem; padding: 0 .45rem; }
-.tg-map-layer svg { flex: none; color: var(--brand-ink, #782036); }
-.tg-map-layer select { min-height: 2.75rem; width: 6rem; max-width: 100%; font-size: .83rem; font-weight: 700; }
+.tg-map-view { background: #fff8fa; }
 .tg-map-status { padding: .4rem .55rem; font-size: .74rem; width: fit-content; }
 .tg-map-fit {
     position: absolute;
