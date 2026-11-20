@@ -5,8 +5,10 @@ import { Camera, Loader2, Sparkles, X } from 'lucide-react';
 import { HYPOTHESIS_TEMPLATE, PHOTO_PROMPTS, readPhotoScores, type PhotoReading, type PhotoScore } from '@/lib/photo-hazard';
 
 /* The model runs in the browser through transformers.js. It is loaded from a CDN at runtime
-   (kept out of the bundle) and only when someone adds a photo; the browser caches it after that. */
-const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.web.min.js';
+   (kept out of the bundle) and only when someone adds a photo; the browser caches it after that.
+   Use the self-contained build: transformers.web.min.js imports onnxruntime by bare package name,
+   which only a bundler can resolve, so a browser import of it always fails. */
+const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.min.js';
 const MODEL_ID = 'Xenova/clip-vit-base-patch32';
 
 type Classifier = (image: string, labels: string[], options: { hypothesis_template: string }) => Promise<PhotoScore[]>;
@@ -62,7 +64,7 @@ type State =
     | { phase: 'loading'; percent: number | null }
     | { phase: 'analysing' }
     | { phase: 'done'; reading: PhotoReading }
-    | { phase: 'failed'; message: string; withPhoto: boolean };
+    | { phase: 'failed'; message: string; withPhoto: boolean; reason?: string };
 
 interface Props {
     photo: string | null;
@@ -99,8 +101,11 @@ export default function HazardPhotoInput({ photo, onPhoto, onReading, kindLabel 
             const reading = readPhotoScores(scores);
             setState({ phase: 'done', reading });
             onReading(reading);
-        } catch {
-            if (runRef.current === run) setState({ phase: 'failed', withPhoto: true, message: 'The photo is attached, but it could not be analysed here. Choose the category yourself.' });
+        } catch (error) {
+            console.error('[TownshipGo] photo reader failed', error);
+            const reason = error instanceof Error ? error.message : String(error);
+            if (runRef.current === run) setState({ phase: 'failed', withPhoto: true, reason: reason.slice(0, 160),
+                message: 'The photo is attached, but it could not be analysed here. Choose the category yourself.' });
         }
     }
 
@@ -139,7 +144,8 @@ export default function HazardPhotoInput({ photo, onPhoto, onReading, kindLabel 
                             {shown.reading.confident ? 'Looks like' : 'Might be'} <strong>{kindLabel(shown.reading.kind)}</strong> ({Math.round(shown.reading.confidence * 100)}%).
                             {shown.reading.confident ? ' Details filled in below. Edit them if needed.' : ' Check the category before sending.'}</p>
                         : <p className="tg-small">We couldn’t spot a footpath hazard in this photo. Choose the category yourself.</p>)}
-                    {shown.phase === 'failed' && <p className="tg-small">{shown.message}</p>}
+                    {shown.phase === 'failed' && <p className="tg-small">{shown.message}
+                        {shown.reason && <span className="tg-photo-reason">Reason: {shown.reason}</span>}</p>}
                 </div>
             </div>
         </div>
