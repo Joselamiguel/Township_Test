@@ -254,7 +254,7 @@ function ResidentPageContent() {
     const [view, setView] = useState<'explore' | 'plan' | 'walk' | 'saved'>(walkSession && !initialWalk.fromLink ? 'walk' : 'plan');
     const [returning, setReturning] = useState(searchParams.get('return') === '1');
     const [savingPack, setSavingPack] = useState(false);
-    const [panelExpanded, setPanelExpanded] = useState(false);
+    const [panelMinimized, setPanelMinimized] = useState(view === 'walk');
     const [livePoint, setLivePoint] = useState<[number, number] | null>(null);
     const [mapFocus, setMapFocus] = useState<[number, number] | undefined>();
 
@@ -485,13 +485,17 @@ function ResidentPageContent() {
         setUsingGPS(false);
         setGeoMsg(null);
         setMapFocus(undefined);
-        setPanelExpanded(false);
         setShowStartPicker(false);
         buzz();
     }
 
     async function startWalk() {
-        if (walkSession && !sessionFinished) { setView('walk'); setLibraryMessage('Your current walk is still in progress. Finish it before starting another.'); return; }
+        if (walkSession && !sessionFinished) {
+            setView('walk');
+            setPanelMinimized(false);
+            setLibraryMessage('Your current walk is still in progress. Finish it before starting another.');
+            return;
+        }
         if (!activeRoute || !walkingData) return;
         const now = new Date().toISOString();
         setStartingWalk(true);
@@ -503,6 +507,7 @@ function ResidentPageContent() {
         const pack = createWalkPack(route, profile, needs, userCoords, edges, walkingData, undefined, networkSnapshot);
         setWalkSession({ id: crypto.randomUUID(), pack, started_at: now, elapsed_ms: 0, track: emptyTrack() });
         setSessionFinished(false); setLivePoint(null); setView('walk');
+        setPanelMinimized(true);
         buzz(80);
         setStep('walking');
         speak(`Your walk has started. About ${minutesOf(route)} minutes. ${route.return_walk ? 'Return to your starting point.' : `To ${route.destination.name}.`}`);
@@ -520,9 +525,9 @@ function ResidentPageContent() {
         if (!libraryRef.current.history.some(w => w.id === id)) return false;
         return changeLibrary({ ...libraryRef.current, history: libraryRef.current.history.map(w => w.id === id ? { ...w, feedback } : w) });
     }
-    function planReturn(minutes: number) { setReturning(true); setNeeds(n => ({ ...n, budget_min: minutes })); setEntranceId(''); setChosenMode(null); setStep('route'); setView('plan'); setPanelExpanded(false); }
-    function focusWalkPoint(point: [number, number]) { setMapFocus(point); setPanelExpanded(false); requestAnimationFrame(()=>document.querySelector('.tg-map')?.scrollIntoView({block:'center',behavior:prefs.reduceMotion?'auto':'smooth'})); }
-    function chooseFacility(asset: WalkingAsset) { chooseDest(asset.external_id || asset.id); setStep('route'); setView('plan'); }
+    function planReturn(minutes: number) { setReturning(true); setNeeds(n => ({ ...n, budget_min: minutes })); setEntranceId(''); setChosenMode(null); setStep('route'); setView('plan'); setPanelMinimized(false); }
+    function focusWalkPoint(point: [number, number]) { setMapFocus(point); requestAnimationFrame(()=>document.querySelector('.tg-map')?.scrollIntoView({block:'center',behavior:prefs.reduceMotion?'auto':'smooth'})); }
+    function chooseFacility(asset: WalkingAsset) { chooseDest(asset.external_id || asset.id); setStep('route'); setView('plan'); setPanelMinimized(false); }
     function replanPack(pack: WalkPack) {
         const target=pack.area_id??'elmina';
         if(target!==area){if(walkSession&&!sessionFinished){setLibraryMessage('Finish the current walk before switching areas.');return;}
@@ -531,7 +536,7 @@ function ResidentPageContent() {
         setMapFocus(undefined);
         setExactDestination(pack.route.destination.name);
         setReturning(!!pack.route.return_walk); setDestId(pack.route.destination.external_id || pack.route.destination.id); setEntranceId(pack.route.return_walk ? '' : pack.route.entrance.id);
-        setDeparture(new Date().toISOString()); setChosenMode(null); setStep('route'); setView('plan'); setReloadVersion(v => v + 1); }
+        setDeparture(new Date().toISOString()); setChosenMode(null); setStep('route'); setView('plan'); setPanelMinimized(false); setReloadVersion(v => v + 1); }
     async function savePack() {
         if (!activeRoute || !walkingData) return;
         const pack = createWalkPack(activeRoute, profile, needs, userCoords, edges, walkingData, undefined, networkSnapshot);
@@ -541,7 +546,14 @@ function ResidentPageContent() {
         setLibraryMessage(ready ? 'Walk saved. Your offline collection is ready in Saved.' : 'Walk saved on this device. Download a walk pack in Saved for dependable offline access.');
     }
     function saveUpdate(update: ConditionUpdate) { const ok=changeLibrary({ ...libraryRef.current, updates: [update, ...libraryRef.current.updates] });if(ok&&!departure)setPlanningNow(update.observed_at);return ok; }
-    function changeArea(next:PilotId){if(walkSession&&!sessionFinished){setLibraryMessage('Finish the current walk before switching areas.');return;}router.replace(`/resident?area=${next}`);}
+    function changeArea(next: PilotId) {
+        if (walkSession && !sessionFinished) {
+            setPanelMinimized(false);
+            setLibraryMessage('Finish the current walk before switching areas.');
+            return;
+        }
+        router.replace(`/resident?area=${next}`);
+    }
     async function shareUpdate(update: ConditionUpdate) {
         if (IS_PAGES_PREVIEW) return false;
         try {
@@ -716,7 +728,7 @@ function ResidentPageContent() {
         setPlaceQuery('');
         setSearchOpen(false);
         setMapFocus(undefined);
-        setPanelExpanded(false);
+        setPanelMinimized(false);
         setStep('route');
         setView('plan');
     }
@@ -731,7 +743,7 @@ function ResidentPageContent() {
     /* ---------------------------------------------------------------- */
 
     return (
-        <div data-view={view} data-expanded={panelExpanded} className={`tg font-sans relative w-full h-[100dvh] flex flex-col overflow-hidden shadow-2xl ${prefs.highContrast ? 'hc' : ''} ${prefs.reduceMotion ? 'rm' : ''}`}>
+        <div data-view={view} data-panel-minimized={panelMinimized || pickingHazard} className={`tg font-sans relative w-full h-[100dvh] flex flex-col overflow-hidden shadow-2xl ${prefs.highContrast ? 'hc' : ''} ${prefs.reduceMotion ? 'rm' : ''}`}>
 
             <div className="tg-topbar">
             <a href="#walk-planning" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[3000] focus:rounded-xl focus:bg-white focus:p-3 focus:font-bold text-slate-900">Skip to walk planning</a>
@@ -819,8 +831,8 @@ function ResidentPageContent() {
             </div>
 
             <section id="walk-planning" aria-label="Walk planning" tabIndex={-1} className="tg-sheet">
-                {view !== 'saved' && !pickingHazard && <PanelGrip expanded={panelExpanded} onChange={setPanelExpanded} />}
-                <div id="walking-panel">
+                {view !== 'saved' && !pickingHazard && <PanelGrip minimized={panelMinimized} walk={view === 'walk'} onChange={setPanelMinimized} />}
+                <div id="walking-panel" className="tg-panel-body">
                 {libraryMessage && <div role="status" className="tg-note mb-3"><p>{libraryMessage}</p><button className="min-h-11 text-sm font-bold underline" onClick={() => setLibraryMessage(null)}>Dismiss message</button></div>}
                 {view === 'explore' && <ExploreWalks nodes={nodes} edges={edges} data={walkingData} request={toolRequest} hazards={hazards} onChoose={chooseFacility} onReturn={planReturn}
                     onLocate={handleGetLocation} locating={geoBusy} locationLabel={originLabel} locationMessage={geoMsg}
@@ -864,7 +876,7 @@ function ResidentPageContent() {
                                 <h1 className="tg-h2">Choose a route</h1>
                                 <p className="tg-small truncate">{returning ? 'Return to your starting point' : `To ${currentDest.name}`}</p>
                             </div>
-                            <button type="button" aria-label="Close route options" className="tg-close" onClick={() => { setStep('where'); setPanelExpanded(false); }}><X size={21} aria-hidden /></button>
+                            <button type="button" aria-label="Close route options" className="tg-close" onClick={() => { setStep('where'); setPanelMinimized(false); }}><X size={21} aria-hidden /></button>
                         </div>
                         {loadingDb || journeySearch.pending ? (
                             <p className="tg-note" role="status">{loadingDb ? 'Loading footpaths…' : 'Finding walking routes…'}</p>
@@ -927,7 +939,7 @@ function ResidentPageContent() {
                 {/* STEP 3: walking */}
                 {walkSession && <div style={{ display: view === 'walk' ? 'block' : 'none' }}>
                     <WalkRecorder key={walkSession.id} session={walkSession} onComplete={finishRecording} onFeedback={saveFeedback} onPosition={setLivePoint}
-                        onNewWalk={() => { setWalkSession(null); setLivePoint(null); setView('plan'); setStep('where'); }} />
+                        onNewWalk={() => { setWalkSession(null); setLivePoint(null); setView('plan'); setStep('where'); setPanelMinimized(false); }} />
                     {!sessionFinished && <div className="tg-stack mt-4">
                         <details className="rounded-xl border border-slate-300 p-3"><summary className="min-h-8 cursor-pointer font-bold">Your original walk plan</summary><p className="tg-small mt-2">Planned at {new Date(walkSession.pack.route.departure_at).toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit'})} Malaysia time. This plan stays fixed while you record; pause and review if conditions change.</p><RouteQualityBar route={walkSession.pack.route} /><WalkTimeline route={walkSession.pack.route} edges={walkSession.pack.edges} records={walkingData?.verifications ?? []} onFocus={focusWalkPoint} /></details>
                         {quickUpdate}
@@ -939,7 +951,13 @@ function ResidentPageContent() {
             </section>
             <nav className="tg-tabs" aria-label="Walking sections">{([
                 ['explore','Explore',Compass],['plan','Plan',RouteIcon],['walk','Walk',Navigation],['saved','Saved',Bookmark],
-            ] as const).map(([id,label,Icon]) => <button key={id} aria-current={view === id ? 'page' : undefined} onClick={() => { setView(id); setSearchOpen(false); setPanelExpanded(false); if (id === 'plan' && step === 'walking') setStep('route'); requestAnimationFrame(() => document.getElementById('walk-planning')?.focus({preventScroll:true})); }}><Icon size={21} aria-hidden />{label}{id === 'walk' && walkSession && !sessionFinished ? ' •' : ''}</button>)}<button type="button" onClick={openReport}><AlertTriangle size={21} aria-hidden />Reports</button></nav>
+            ] as const).map(([id, label, Icon]) => <button key={id} aria-current={view === id ? 'page' : undefined} onClick={() => {
+                setView(id);
+                setSearchOpen(false);
+                setPanelMinimized(id === 'walk' && id !== view && !!walkSession && !sessionFinished);
+                if (id === 'plan' && step === 'walking') setStep('route');
+                requestAnimationFrame(() => document.getElementById('walk-planning')?.focus({ preventScroll: true }));
+            }}><Icon size={21} aria-hidden />{label}{id === 'walk' && walkSession && !sessionFinished ? ' •' : ''}</button>)}<button type="button" onClick={openReport}><AlertTriangle size={21} aria-hidden />Reports</button></nav>
 
             {/* ---------------- Dialogs ---------------- */}
 
@@ -1078,7 +1096,7 @@ function ResidentPageContent() {
                                     : 'Choose a point near a mapped path in this area.' : 'Choose where you saw the hazard.'}
                             </p>
                             <div className="grid grid-cols-2 gap-2">
-                                <button type="button" className="tg-btn" onClick={() => { setShowReportModal(false); if (view === 'saved') setView('plan'); setPanelExpanded(false); setPickingHazard(true); }}>Pick on map</button>
+                                <button type="button" className="tg-btn" onClick={() => { setShowReportModal(false); if (view === 'saved') setView('plan'); setPickingHazard(true); }}>Pick on map</button>
                                 <button type="button" className="tg-btn" disabled={reportLocated} onClick={locateReport}>{reportLocated ? 'Finding…' : 'My location'}</button>
                             </div>
                         </div>
