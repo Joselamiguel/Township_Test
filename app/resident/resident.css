@@ -496,3 +496,4 @@
 @keyframes tg-spin { to { transform: rotate(360deg); } }
 .tg-report-photo { float: right; width: 3.25rem; height: 3.25rem; object-fit: cover; border-radius: .5rem; margin-left: .5rem; }
 .tg.hc .tg-photo-add { border-color: #000; }
+.tg-photo-reason { display: block; margin-top: .2rem; font-size: .75rem; opacity: .8; overflow-wrap: anywhere; }
